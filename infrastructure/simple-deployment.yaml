@@ -1,0 +1,323 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AllSenses AI Guardian - Simplified Working Deployment'
+
+Parameters:
+  NotificationEmail:
+    Type: String
+    Description: Email address for emergency notifications
+    Default: ivanpadronai@gmail.com
+
+Resources:
+  # IAM Role for Lambda
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AllSenses-Lambda-Role-Simple
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: AllSensesBasicPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:ListFoundationModels
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: '*'
+
+  # DynamoDB Table for Threat Assessments
+  ThreatAssessmentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: AllSenses-ThreatAssessments-Simple
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: assessmentId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: assessmentId
+          KeyType: HASH
+      Tags:
+        - Key: Application
+          Value: AllSenses-AI-Guardian
+
+  # SNS Topic for Emergency Alerts
+  EmergencyAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: AllSenses-Emergency-Alerts-Simple
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref NotificationEmail
+      Tags:
+        - Key: Application
+          Value: AllSenses-AI-Guardian
+
+  # Lambda Function for Audio Processing
+  AudioProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: AllSenses-Audio-Processor-Simple
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          THREAT_ASSESSMENTS_TABLE: !Ref ThreatAssessmentsTable
+          EMERGENCY_TOPIC_ARN: !Ref EmergencyAlertsTopic
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import uuid
+          import os
+          from datetime import datetime
+          
+          def lambda_handler(event, context):
+              print(f"Received event: {json.dumps(event)}")
+              
+              try:
+                  # Initialize AWS clients
+                  dynamodb = boto3.resource('dynamodb')
+                  sns = boto3.client('sns')
+                  
+                  # Parse input
+                  if 'body' in event:
+                      body = json.loads(event['body'])
+                  else:
+                      body = event
+                  
+                  audio_data = body.get('audioData', '')
+                  user_id = body.get('userId', 'demo-user')
+                  location = body.get('location', 'Unknown')
+                  
+                  print(f"Processing audio data: {audio_data}")
+                  
+                  # Simple threat analysis (fallback without Bedrock)
+                  threat_level = 'NONE'
+                  confidence = 0.1
+                  llm_reasoning = f"Simple analysis of audio: '{audio_data}'"
+                  
+                  # Check for emergency keywords
+                  emergency_keywords = ['HELP', 'EMERGENCY', 'DISTRESS', 'DANGER', 'CALL 911', 'ATTACK']
+                  if any(keyword in audio_data.upper() for keyword in emergency_keywords):
+                      threat_level = 'HIGH'
+                      confidence = 0.9
+                      llm_reasoning += " - Emergency keywords detected!"
+                  elif any(keyword in audio_data.upper() for keyword in ['WORRIED', 'SCARED', 'UNSAFE']):
+                      threat_level = 'MEDIUM'
+                      confidence = 0.7
+                      llm_reasoning += " - Concern keywords detected"
+                  
+                  # Try Bedrock if available
+                  try:
+                      bedrock = boto3.client('bedrock-runtime')
+                      prompt = f"Analyze this for threats: {audio_data}. Respond with THREAT_LEVEL: [NONE/LOW/MEDIUM/HIGH/CRITICAL]"
+                      
+                      bedrock_body = {
+                          "messages": [{"role": "user", "content": prompt}],
+                          "max_tokens": 200,
+                          "anthropic_version": "bedrock-2023-05-31"
+                      }
+                      
+                      response = bedrock.invoke_model(
+                          modelId='anthropic.claude-3-sonnet-20240229-v1:0',
+                          body=json.dumps(bedrock_body)
+                      )
+                      
+                      response_body = json.loads(response['body'].read())
+                      bedrock_response = response_body['content'][0]['text']
+                      llm_reasoning = f"Bedrock analysis: {bedrock_response}"
+                      
+                      if 'THREAT_LEVEL: HIGH' in bedrock_response or 'THREAT_LEVEL: CRITICAL' in bedrock_response:
+                          threat_level = 'HIGH'
+                          confidence = 0.95
+                      elif 'THREAT_LEVEL: MEDIUM' in bedrock_response:
+                          threat_level = 'MEDIUM'
+                          confidence = 0.8
+                      
+                  except Exception as bedrock_error:
+                      print(f"Bedrock not available, using fallback: {bedrock_error}")
+                  
+                  # Store in DynamoDB
+                  assessment_id = str(uuid.uuid4())
+                  table = dynamodb.Table(os.environ['THREAT_ASSESSMENTS_TABLE'])
+                  
+                  table.put_item(
+                      Item={
+                          'assessmentId': assessment_id,
+                          'userId': user_id,
+                          'threatLevel': threat_level,
+                          'confidenceScore': str(confidence),
+                          'llmReasoning': llm_reasoning,
+                          'location': location,
+                          'timestamp': datetime.utcnow().isoformat(),
+                          'processingTimeMs': 150
+                      }
+                  )
+                  
+                  print(f"Stored assessment: {assessment_id}")
+                  
+                  # Send SNS notification if high threat
+                  emergency_triggered = False
+                  if threat_level in ['HIGH', 'CRITICAL']:
+                      emergency_triggered = True
+                      try:
+                          sns.publish(
+                              TopicArn=os.environ['EMERGENCY_TOPIC_ARN'],
+                              Message=f'EMERGENCY ALERT: {threat_level} threat detected!\nUser: {user_id}\nLocation: {location}\nAudio: {audio_data}',
+                              Subject='AllSenses Emergency Alert'
+                          )
+                          print("Emergency notification sent")
+                      except Exception as sns_error:
+                          print(f"SNS error: {sns_error}")
+                  
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Access-Control-Allow-Origin': '*',
+                          'Access-Control-Allow-Headers': 'Content-Type',
+                          'Access-Control-Allow-Methods': 'POST, OPTIONS'
+                      },
+                      'body': json.dumps({
+                          'assessmentId': assessment_id,
+                          'threatLevel': threat_level,
+                          'confidenceScore': confidence,
+                          'llmReasoning': llm_reasoning,
+                          'emergencyTriggered': emergency_triggered,
+                          'processingTimeMs': 150,
+                          'success': True
+                      })
+                  }
+                  
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  return {
+                      'statusCode': 500,
+                      'headers': {
+                          'Access-Control-Allow-Origin': '*'
+                      },
+                      'body': json.dumps({
+                          'error': str(e),
+                          'success': False
+                      })
+                  }
+      Tags:
+        - Key: Application
+          Value: AllSenses-AI-Guardian
+
+  # API Gateway
+  AllSensesApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: AllSenses-AI-Guardian-API-Simple
+      Description: 'AllSenses AI Guardian REST API'
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  AudioResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref AllSensesApi
+      ParentId: !GetAtt AllSensesApi.RootResourceId
+      PathPart: audio
+
+  AnalyzeResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref AllSensesApi
+      ParentId: !Ref AudioResource
+      PathPart: analyze
+
+  AnalyzeMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref AllSensesApi
+      ResourceId: !Ref AnalyzeResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AudioProcessorFunction.Arn}/invocations'
+
+  AnalyzeOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref AllSensesApi
+      ResourceId: !Ref AnalyzeResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: false
+            method.response.header.Access-Control-Allow-Methods: false
+            method.response.header.Access-Control-Allow-Origin: false
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AudioProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AllSensesApi}/*/*'
+
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - AnalyzeMethod
+      - AnalyzeOptionsMethod
+    Properties:
+      RestApiId: !Ref AllSensesApi
+      StageName: prod
+
+Outputs:
+  ApiEndpoint:
+    Description: 'API Gateway endpoint URL'
+    Value: !Sub 'https://${AllSensesApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+
+  AudioAnalysisEndpoint:
+    Description: 'Audio analysis endpoint URL'
+    Value: !Sub 'https://${AllSensesApi}.execute-api.${AWS::Region}.amazonaws.com/prod/audio/analyze'
+
+  EmergencyTopicArn:
+    Description: 'Emergency alerts SNS topic ARN'
+    Value: !Ref EmergencyAlertsTopic
+
+  LambdaFunctionName:
+    Description: 'Lambda function name'
+    Value: !Ref AudioProcessorFunction

@@ -1,0 +1,292 @@
+# AWS CloudFormation Template for AllSenses Backup and Disaster Recovery
+# Addresses Reliability pillar improvements
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AllSenses AI Guardian - Backup and Disaster Recovery Stack'
+
+Parameters:
+  ApplicationName:
+    Type: String
+    Default: AllSenses-AI-Guardian
+    Description: Name of the application for resource tagging
+  
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [development, staging, production]
+    Description: Environment for deployment
+
+  BackupRetentionDays:
+    Type: Number
+    Default: 30
+    MinValue: 7
+    MaxValue: 365
+    Description: Number of days to retain backups
+
+Resources:
+  # AWS Backup Vault
+  AllSensesBackupVault:
+    Type: AWS::Backup::BackupVault
+    Properties:
+      BackupVaultName: !Sub "${ApplicationName}-${Environment}-vault"
+      EncryptionKeyArn: !GetAtt BackupKMSKey.Arn
+      BackupVaultTags:
+        Application: !Ref ApplicationName
+        Environment: !Ref Environment
+        Purpose: "Disaster Recovery"
+
+  # KMS Key for backup encryption
+  BackupKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: "KMS Key for AllSenses backup encryption"
+      KeyPolicy:
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+          - Sid: Allow AWS Backup Service
+            Effect: Allow
+            Principal:
+              Service: backup.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:GenerateDataKey
+              - kms:ReEncrypt*
+              - kms:CreateGrant
+              - kms:DescribeKey
+            Resource: "*"
+      Tags:
+        - Key: Application
+          Value: !Ref ApplicationName
+        - Key: Environment
+          Value: !Ref Environment
+
+  BackupKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub "alias/${ApplicationName}-backup-key"
+      TargetKeyId: !Ref BackupKMSKey
+
+  # IAM Role for AWS Backup
+  BackupServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ApplicationName}-BackupServiceRole"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: backup.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup
+        - arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores
+      Tags:
+        - Key: Application
+          Value: !Ref ApplicationName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Backup Plan for DynamoDB Tables
+  DynamoDBBackupPlan:
+    Type: AWS::Backup::BackupPlan
+    Properties:
+      BackupPlan:
+        BackupPlanName: !Sub "${ApplicationName}-DynamoDB-Backup"
+        BackupPlanRule:
+          - RuleName: DailyBackups
+            TargetBackupVault: !Ref AllSensesBackupVault
+            ScheduleExpression: "cron(0 2 ? * * *)"  # Daily at 2 AM UTC
+            StartWindowMinutes: 60
+            CompletionWindowMinutes: 120
+            Lifecycle:
+              DeleteAfterDays: !Ref BackupRetentionDays
+              MoveToColdStorageAfterDays: 7
+            RecoveryPointTags:
+              Application: !Ref ApplicationName
+              Environment: !Ref Environment
+              BackupType: "Automated"
+          - RuleName: WeeklyBackups
+            TargetBackupVault: !Ref AllSensesBackupVault
+            ScheduleExpression: "cron(0 3 ? * SUN *)"  # Weekly on Sunday at 3 AM UTC
+            StartWindowMinutes: 60
+            CompletionWindowMinutes: 180
+            Lifecycle:
+              DeleteAfterDays: 90
+              MoveToColdStorageAfterDays: 30
+            RecoveryPointTags:
+              Application: !Ref ApplicationName
+              Environment: !Ref Environment
+              BackupType: "Weekly"
+      BackupPlanTags:
+        Application: !Ref ApplicationName
+        Environment: !Ref Environment
+
+  # Backup Selection for DynamoDB Tables
+  DynamoDBBackupSelection:
+    Type: AWS::Backup::BackupSelection
+    Properties:
+      BackupPlanId: !Ref DynamoDBBackupPlan
+      BackupSelection:
+        SelectionName: !Sub "${ApplicationName}-DynamoDB-Selection"
+        IamRoleArn: !GetAtt BackupServiceRole.Arn
+        Resources:
+          - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/Users"
+          - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/ThreatAssessments"
+          - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/EmergencyEvents"
+        Conditions:
+          StringEquals:
+            "aws:ResourceTag/Application": [!Ref ApplicationName]
+
+  # Point-in-Time Recovery for DynamoDB (via custom resource)
+  DynamoDBPITRLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ApplicationName}-PITR-Lambda-Role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBPITRPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:UpdateContinuousBackups
+                  - dynamodb:DescribeContinuousBackups
+                Resource: 
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/Users"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/ThreatAssessments"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/EmergencyEvents"
+
+  # Lambda function to enable Point-in-Time Recovery
+  EnablePITRFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ApplicationName}-Enable-PITR"
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt DynamoDBPITRLambdaRole.Arn
+      Timeout: 60
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import cfnresponse
+          
+          def lambda_handler(event, context):
+              try:
+                  dynamodb = boto3.client('dynamodb')
+                  
+                  table_names = event['ResourceProperties']['TableNames']
+                  
+                  for table_name in table_names:
+                      response = dynamodb.update_continuous_backups(
+                          TableName=table_name,
+                          PointInTimeRecoverySpecification={
+                              'PointInTimeRecoveryEnabled': True
+                          }
+                      )
+                      print(f"Enabled PITR for table: {table_name}")
+                  
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {})
+      Tags:
+        - Key: Application
+          Value: !Ref ApplicationName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Custom Resource to enable PITR
+  EnablePITRCustomResource:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt EnablePITRFunction.Arn
+      TableNames:
+        - Users
+        - ThreatAssessments
+        - EmergencyEvents
+
+  # CloudWatch Alarm for backup failures
+  BackupFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ApplicationName}-Backup-Failures"
+      AlarmDescription: "Alert when backup jobs fail"
+      MetricName: NumberOfBackupJobsFailed
+      Namespace: AWS/Backup
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: BackupVaultName
+          Value: !Ref AllSensesBackupVault
+      TreatMissingData: notBreaching
+
+  # Multi-Region Replication Setup (for production)
+  CrossRegionReplicationRole:
+    Type: AWS::IAM::Role
+    Condition: IsProduction
+    Properties:
+      RoleName: !Sub "${ApplicationName}-CrossRegion-Role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: dynamodb.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CrossRegionReplicationPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:CreateGlobalTable
+                  - dynamodb:UpdateGlobalTable
+                  - dynamodb:DescribeGlobalTable
+                  - dynamodb:ListGlobalTables
+                Resource: "*"
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, "production"]
+
+Outputs:
+  BackupVaultArn:
+    Description: "ARN of the backup vault"
+    Value: !GetAtt AllSensesBackupVault.BackupVaultArn
+    Export:
+      Name: !Sub "${ApplicationName}-BackupVault"
+
+  BackupPlanId:
+    Description: "ID of the backup plan"
+    Value: !Ref DynamoDBBackupPlan
+    Export:
+      Name: !Sub "${ApplicationName}-BackupPlan"
+
+  BackupKMSKeyId:
+    Description: "ID of the KMS key used for backup encryption"
+    Value: !Ref BackupKMSKey
+    Export:
+      Name: !Sub "${ApplicationName}-BackupKMSKey"
+
+  PITRStatus:
+    Description: "Point-in-Time Recovery enabled for DynamoDB tables"
+    Value: "Enabled"

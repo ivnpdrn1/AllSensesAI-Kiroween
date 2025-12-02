@@ -1,0 +1,437 @@
+/* Audio Monitor specific styles */
+
+.monitoring-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 16px;
+    padding: 8px 16px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 20px;
+    font-weight: 500;
+}
+
+.monitoring-status .status-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: var(--border-color);
+}
+
+.monitoring-status .status-dot.monitoring {
+    background-color: var(--success-color);
+    animation: pulse 2s infinite;
+}
+
+.monitoring-status .status-dot.error {
+    background-color: var(--danger-color);
+}
+
+.controls-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    align-items: center;
+}
+
+.control-group {
+    display: flex;
+    gap: 16px;
+}
+
+.btn-large {
+    padding: 16px 32px;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.btn-large:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.consent-container {
+    text-align: center;
+    max-width: 400px;
+}
+
+.consent-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    font-weight: 500;
+    margin-bottom: 8px;
+}
+
+.consent-checkbox input[type="checkbox"] {
+    display: none;
+}
+
+.checkmark {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--primary-color);
+    border-radius: 4px;
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+.consent-checkbox input[type="checkbox"]:checked + .checkmark {
+    background-color: var(--primary-color);
+}
+
+.consent-checkbox input[type="checkbox"]:checked + .checkmark::after {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-weight: bold;
+}
+
+.consent-note {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.8);
+    line-height: 1.4;
+}
+
+.visualization-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.audio-waveform {
+    position: relative;
+    background: #1e293b;
+    border-radius: 8px;
+    padding: 16px;
+    border: 1px solid var(--border-color);
+}
+
+.waveform-overlay {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    color: #e2e8f0;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 14px;
+}
+
+#waveformCanvas {
+    width: 100%;
+    height: 200px;
+    background: transparent;
+}
+
+.audio-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 16px;
+}
+
+.metric-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: #f8fafc;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+}
+
+.metric-label {
+    min-width: 80px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.metric-bar {
+    flex: 1;
+    height: 8px;
+    background: var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.metric-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--success-color), var(--warning-color), var(--danger-color));
+    transition: width 0.3s ease;
+    width: 0%;
+}
+
+.stress-fill {
+    background: linear-gradient(90deg, var(--success-color), var(--warning-color), var(--danger-color));
+}
+
+.metric-value {
+    min-width: 60px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 12px;
+    color: var(--text-primary);
+}
+
+.threat-indicator {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: 600;
+    text-align: center;
+    min-width: 100px;
+}
+
+.threat-indicator.NONE {
+    background: #dcfce7;
+    color: var(--success-color);
+}
+
+.threat-indicator.LOW {
+    background: #fef3c7;
+    color: var(--warning-color);
+}
+
+.threat-indicator.MEDIUM {
+    background: #fed7aa;
+    color: #ea580c;
+}
+
+.threat-indicator.HIGH {
+    background: #fecaca;
+    color: var(--danger-color);
+}
+
+.threat-indicator.CRITICAL {
+    background: #fca5a5;
+    color: #991b1b;
+}
+
+.results-container {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 20px;
+}
+
+.analysis-card {
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 20px;
+}
+
+.analysis-card h3 {
+    margin-bottom: 16px;
+    color: var(--text-primary);
+}
+
+.analysis-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.analysis-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.analysis-item:last-child {
+    border-bottom: none;
+}
+
+.analysis-item .label {
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.analysis-item .value {
+    color: var(--text-primary);
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 14px;
+}
+
+.llm-reasoning {
+    background: #f8fafc;
+    border-radius: 6px;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+}
+
+.llm-reasoning h4 {
+    margin-bottom: 8px;
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.llm-reasoning p {
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.4;
+    margin: 0;
+}
+
+.emergency-status {
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 20px;
+}
+
+.emergency-status h3 {
+    margin-bottom: 16px;
+    color: var(--text-primary);
+}
+
+.emergency-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    background: #dcfce7;
+    border-radius: 6px;
+    margin-bottom: 12px;
+}
+
+.emergency-indicator.active {
+    background: #fecaca;
+    color: var(--danger-color);
+}
+
+.emergency-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--success-color);
+}
+
+.emergency-indicator.active .emergency-dot {
+    background-color: var(--danger-color);
+    animation: pulse 1s infinite;
+}
+
+.emergency-details {
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.emergency-details p {
+    margin: 4px 0;
+}
+
+.history-controls {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+    align-items: center;
+}
+
+.filter-select {
+    padding: 6px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: white;
+    color: var(--text-primary);
+}
+
+.history-log {
+    background: #1e293b;
+    color: #e2e8f0;
+    border-radius: 8px;
+    padding: 16px;
+    max-height: 300px;
+    overflow-y: auto;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 13px;
+}
+
+.history-entry {
+    display: flex;
+    gap: 12px;
+    padding: 4px 0;
+    border-bottom: 1px solid #334155;
+}
+
+.history-entry:last-child {
+    border-bottom: none;
+}
+
+.history-entry .timestamp {
+    color: #94a3b8;
+    min-width: 120px;
+}
+
+.history-entry .message {
+    color: #e2e8f0;
+}
+
+.history-entry.threat .message {
+    color: var(--warning-color);
+}
+
+.history-entry.emergency .message {
+    color: var(--danger-color);
+}
+
+.history-entry.success .message {
+    color: var(--success-color);
+}
+
+.test-buttons {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.btn-warning {
+    background-color: var(--warning-color);
+    color: white;
+}
+
+.btn-warning:hover {
+    background-color: #d97706;
+}
+
+.btn-danger {
+    background-color: var(--danger-color);
+    color: white;
+}
+
+.btn-danger:hover {
+    background-color: #dc2626;
+}
+
+.test-note {
+    font-size: 14px;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .control-group {
+        flex-direction: column;
+    }
+    
+    .results-container {
+        grid-template-columns: 1fr;
+    }
+    
+    .audio-metrics {
+        grid-template-columns: 1fr;
+    }
+    
+    .test-buttons {
+        flex-direction: column;
+    }
+    
+    .history-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}

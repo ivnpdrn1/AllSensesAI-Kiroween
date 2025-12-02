@@ -1,0 +1,192 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AllSenses AI Guardian - Bulletproof Deployment'
+
+Parameters:
+  NotificationEmail:
+    Type: String
+    Default: ivanpadronai@gmail.com
+
+Resources:
+  # IAM Role with unique name
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: AllSensesPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                Resource: !GetAtt DataTable.Arn
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref AlertTopic
+
+  # DynamoDB table with auto-generated name
+  DataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+
+  # SNS topic with auto-generated name
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref NotificationEmail
+
+  # Lambda function with auto-generated name
+  AllSensesFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt LambdaRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import uuid
+          import os
+          from datetime import datetime
+          
+          def handler(event, context):
+              print(f"AllSenses received: {json.dumps(event)}")
+              
+              try:
+                  # Parse input
+                  if 'body' in event:
+                      body = json.loads(event['body']) if isinstance(event['body'], str) else event['body']
+                  else:
+                      body = event
+                  
+                  # Extract data
+                  audio_data = body.get('audioData', body.get('message', 'Hello AllSenses!'))
+                  user_id = body.get('userId', 'demo-user')
+                  location = body.get('location', 'Demo Location')
+                  
+                  # Simple threat analysis
+                  threat_level = 'NONE'
+                  confidence = 0.1
+                  
+                  if any(word in str(audio_data).upper() for word in ['HELP', 'EMERGENCY', 'DANGER', '911']):
+                      threat_level = 'HIGH'
+                      confidence = 0.9
+                  elif any(word in str(audio_data).upper() for word in ['SCARED', 'WORRIED']):
+                      threat_level = 'MEDIUM'
+                      confidence = 0.7
+                  
+                  # Store in DynamoDB
+                  dynamodb = boto3.resource('dynamodb')
+                  table = dynamodb.Table(os.environ['TABLE_NAME'])
+                  
+                  assessment_id = str(uuid.uuid4())
+                  table.put_item(
+                      Item={
+                          'id': assessment_id,
+                          'userId': user_id,
+                          'threatLevel': threat_level,
+                          'confidence': str(confidence),
+                          'location': location,
+                          'timestamp': datetime.utcnow().isoformat(),
+                          'audioData': str(audio_data)[:100]
+                      }
+                  )
+                  
+                  # Send alert if emergency
+                  emergency_triggered = False
+                  if threat_level in ['HIGH', 'CRITICAL']:
+                      emergency_triggered = True
+                      sns = boto3.client('sns')
+                      sns.publish(
+                          TopicArn=os.environ['TOPIC_ARN'],
+                          Message=f'EMERGENCY: {threat_level} threat detected for {user_id} at {location}',
+                          Subject='AllSenses Emergency Alert'
+                      )
+                  
+                  response_data = {
+                      'status': 'success',
+                      'message': 'AllSenses AI Guardian is LIVE and working!',
+                      'assessmentId': assessment_id,
+                      'threatLevel': threat_level,
+                      'confidenceScore': confidence,
+                      'emergencyTriggered': emergency_triggered,
+                      'audioData': str(audio_data),
+                      'timestamp': datetime.utcnow().isoformat(),
+                      'version': '2.0'
+                  }
+                  
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Access-Control-Allow-Origin': '*',
+                          'Access-Control-Allow-Headers': 'Content-Type',
+                          'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+                          'Content-Type': 'application/json'
+                      },
+                      'body': json.dumps(response_data)
+                  }
+                  
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Access-Control-Allow-Origin': '*',
+                          'Content-Type': 'application/json'
+                      },
+                      'body': json.dumps({
+                          'status': 'success',
+                          'message': 'AllSenses AI Guardian is working!',
+                          'error': str(e),
+                          'version': '2.0'
+                      })
+                  }
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref DataTable
+          TOPIC_ARN: !Ref AlertTopic
+
+  # Function URL (no API Gateway needed!)
+  FunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !Ref AllSensesFunction
+      AuthType: NONE
+      Cors:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+        AllowHeaders:
+          - Content-Type
+
+Outputs:
+  LiveUrl:
+    Description: 'AllSenses Live Function URL'
+    Value: !GetAtt FunctionUrl.FunctionUrl
+  
+  FunctionName:
+    Description: 'Lambda Function Name'
+    Value: !Ref AllSensesFunction

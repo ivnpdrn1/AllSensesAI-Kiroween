@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWS Integration - AllSenses AI Guardian</title>
+    <link rel="stylesheet" href="assets/css/main.css">
+    <link rel="stylesheet" href="assets/css/aws-integration.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>AWS Service Integration</h1>
+            <p class="subtitle">Complete AI Agent Workflow on AWS</p>
+            <nav class="nav">
+                <a href="index.html" class="nav-link">← Back to Dashboard</a>
+                <a href="reasoning.html" class="nav-link">🧠 LLM Reasoning</a>
+            </nav>
+        </header>
+
+        <main class="main-content">
+            <!-- AI Agent Qualification Status -->
+            <section class="qualification-section">
+                <h2>AI Agent Qualification Status</h2>
+                <div class="qualification-grid">
+                    <div class="qualification-card" id="llmQualification">
+                        <div class="qualification-icon">🧠</div>
+                        <h3>LLM Integration</h3>
+                        <p>AWS Bedrock for autonomous reasoning</p>
+                        <div class="qualification-status">
+                            <span class="status-indicator"></span>
+                            <span class="status-text">Checking...</span>
+                        </div>
+                        <div class="qualification-details">
+                            <div class="detail-item">
+                                <span>Primary Model:</span>
+                                <span id="primaryModel">Claude-3 Sonnet</span>
+                            </div>
+                            <div class="detail-item">
+                                <span>Fallback Model:</span>
+                                <span id="fallbackModel">Titan Text Express</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="qualification-card" id="awsQualification">
+                        <div class="qualification-icon">☁️</div>
+                        <h3>AWS Services</h3>
+                        <p>Multiple AWS service integration</p>
+                        <div class="qualification-status">
+                            <span class="status-indicator"></span>
+                            <span class="status-text">Checking...</span>
+                        </div>
+                        <div class="qualification-details">
+                            <div class="detail-item">
+                                <span>Services:</span>
+                                <span id="serviceCount">4 Connected</span>
+                            </div>
+                            <div class="detail-item">
+                                <span>Region:</span>
+                                <span id="awsRegion">us-east-1</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="qualification-card" id="autonomousQualification">
+                        <div class="qualification-icon">🤖</div>
+                        <h3>Autonomous Capabilities</h3>
+                        <p>Independent decision making</p>
+                        <div class="qualification-status">
+                            <span class="status-indicator"></span>
+                            <span class="status-text">Checking...</span>
+                        </div>
+                        <div class="qualification-details">
+                            <div class="detail-item">
+                                <span>Decisions Made:</span>
+                                <span id="decisionCount">0</span>
+                            </div>
+                            <div class="detail-item">
+                                <span>Success Rate:</span>
+                                <span id="successRate">95%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- AWS Service Architecture -->
+            <section class="architecture-section">
+                <h2>AWS Service Architecture</h2>
+                <div class="architecture-diagram">
+                    <div class="service-layer" id="presentationLayer">
+                        <h3>Presentation Layer</h3>
+                        <div class="service-box">
+                            <div class="service-icon">🌐</div>
+                            <div class="service-info">
+                                <h4>API Gateway</h4>
+                                <p>REST API endpoints</p>
+                                <div class="service-status" id="apiGatewayStatus">
+                                    <span class="status-dot"></span>
+                                    <span>Checking...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="service-layer" id="computeLayer">
+                        <h3>Compute Layer</h3>
+                        <div class="service-boxes">
+                            <div class="service-box">
+                                <div class="service-icon">⚡</div>
+                                <div class="service-info">
+                                    <h4>Lambda Functions</h4>
+                                    <p>Serverless processing</p>
+                                    <div class="service-status" id="lambdaStatus">
+                                        <span class="status-dot"></span>
+                                        <span>Checking...</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="service-box">
+                                <div class="service-icon">🧠</div>
+                                <div class="service-info">
+                                    <h4>Bedrock</h4>
+                                    <p>LLM reasoning</p>
+                                    <div class="service-status" id="bedrockStatus">
+                                        <span class="status-dot"></span>
+                                        <span>Checking...</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="service-layer" id="dataLayer">
+                        <h3>Data Layer</h3>
+                        <div class="service-boxes">
+                            <div class="service-box">
+                                <div class="service-icon">🗄️</div>
+                                <div class="service-info">
+                                    <h4>DynamoDB</h4>
+                                    <p>NoSQL database</p>
+                                    <div class="service-status" id="dynamoStatus">
+                                        <span class="status-dot"></span>
+                                        <span>Checking...</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="service-box">
+                                <div class="service-icon">📧</div>
+                                <div class="service-info">
+                                    <h4>SNS</h4>
+                                    <p>Notifications</p>
+                                    <div class="service-status" id="snsStatus">
+                                        <span class="status-dot"></span>
+                                        <span>Checking...</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Agent Workflow Visualization -->
+            <section class="workflow-section">
+                <h2>AI Agent Workflow</h2>
+                <div class="workflow-container">
+                    <div class="workflow-step" id="dataIngestion">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h4>Data Ingestion</h4>
+                            <p>Sensor data collection via API Gateway</p>
+                            <div class="step-details">
+                                <span>Audio, Motion, Location, Environment</span>
+                            </div>
+                        </div>
+                        <div class="step-status">
+                            <span class="status-indicator"></span>
+                        </div>
+                    </div>
+
+                    <div class="workflow-arrow">→</div>
+
+                    <div class="workflow-step" id="llmAnalysis">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h4>LLM Analysis</h4>
+                            <p>AWS Bedrock processes data autonomously</p>
+                            <div class="step-details">
+                                <span>Threat assessment, Confidence scoring</span>
+                            </div>
+                        </div>
+                        <div class="step-status">
+                            <span class="status-indicator"></span>
+                        </div>
+                    </div>
+
+                    <div class="workflow-arrow">→</div>
+
+                    <div class="workflow-step" id="decisionMaking">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h4>Decision Making</h4>
+                            <p>Autonomous emergency response decisions</p>
+                            <div class="step-details">
+                                <span>Multi-stage reasoning, Action selection</span>
+                            </div>
+                        </div>
+                        <div class="step-status">
+                            <span class="status-indicator"></span>
+                        </div>
+                    </div>
+
+                    <div class="workflow-arrow">→</div>
+
+                    <div class="workflow-step" id="dataStorage">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <h4>Data Storage</h4>
+                            <p>DynamoDB stores decisions and events</p>
+                            <div class="step-details">
+                                <span>Users, Events, Assessments</span>
+                            </div>
+                        </div>
+                        <div class="step-status">
+                            <span class="status-indicator"></span>
+                        </div>
+                    </div>
+
+                    <div class="workflow-arrow">→</div>
+
+                    <div class="workflow-step" id="notification">
+                        <div class="step-number">5</div>
+                        <div class="step-content">
+                            <h4>Notification</h4>
+                            <p>SNS sends emergency alerts</p>
+                            <div class="step-details">
+                                <span>SMS, Email, Push notifications</span>
+                            </div>
+                        </div>
+                        <div class="step-status">
+                            <span class="status-indicator"></span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Service Health Monitoring -->
+            <section class="monitoring-section">
+                <h2>Service Health Monitoring</h2>
+                <div class="monitoring-grid">
+                    <div class="monitor-card">
+                        <h3>API Gateway</h3>
+                        <div class="monitor-metrics">
+                            <div class="metric">
+                                <span class="metric-label">Requests/min:</span>
+                                <span class="metric-value" id="apiRequests">0</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Latency:</span>
+                                <span class="metric-value" id="apiLatency">0ms</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Error Rate:</span>
+                                <span class="metric-value" id="apiErrors">0%</span>
+                            </div>
+                        </div>
+                        <div class="health-indicator" id="apiHealth">
+                            <span class="health-dot"></span>
+                            <span>Healthy</span>
+                        </div>
+                    </div>
+
+                    <div class="monitor-card">
+                        <h3>AWS Bedrock</h3>
+                        <div class="monitor-metrics">
+                            <div class="metric">
+                                <span class="metric-label">Invocations:</span>
+                                <span class="metric-value" id="bedrockInvocations">0</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Avg Response:</span>
+                                <span class="metric-value" id="bedrockLatency">0ms</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Success Rate:</span>
+                                <span class="metric-value" id="bedrockSuccess">100%</span>
+                            </div>
+                        </div>
+                        <div class="health-indicator" id="bedrockHealth">
+                            <span class="health-dot"></span>
+                            <span>Healthy</span>
+                        </div>
+                    </div>
+
+                    <div class="monitor-card">
+                        <h3>DynamoDB</h3>
+                        <div class="monitor-metrics">
+                            <div class="metric">
+                                <span class="metric-label">Read/Write:</span>
+                                <span class="metric-value" id="dynamoOps">0/0</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Throttles:</span>
+                                <span class="metric-value" id="dynamoThrottles">0</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Capacity:</span>
+                                <span class="metric-value" id="dynamoCapacity">Auto</span>
+                            </div>
+                        </div>
+                        <div class="health-indicator" id="dynamoHealth">
+                            <span class="health-dot"></span>
+                            <span>Healthy</span>
+                        </div>
+                    </div>
+
+                    <div class="monitor-card">
+                        <h3>SNS</h3>
+                        <div class="monitor-metrics">
+                            <div class="metric">
+                                <span class="metric-label">Messages:</span>
+                                <span class="metric-value" id="snsMessages">0</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Delivery Rate:</span>
+                                <span class="metric-value" id="snsDelivery">100%</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Failed:</span>
+                                <span class="metric-value" id="snsFailed">0</span>
+                            </div>
+                        </div>
+                        <div class="health-indicator" id="snsHealth">
+                            <span class="health-dot"></span>
+                            <span>Healthy</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Test Controls -->
+            <section class="test-controls-section">
+                <h2>Integration Testing</h2>
+                <div class="test-controls">
+                    <button id="testAllServices" class="btn btn-primary">Test All Services</button>
+                    <button id="testWorkflow" class="btn btn-accent">Test Complete Workflow</button>
+                    <button id="simulateEmergency" class="btn btn-secondary">Simulate Emergency</button>
+                </div>
+                <div class="test-results" id="testResults">
+                    <div class="test-log">
+                        <div class="log-entry">
+                            <span class="timestamp">System Ready</span>
+                            <span class="message">AWS integration dashboard initialized</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="assets/js/app.js"></script>
+    <script src="assets/js/aws-integration.js"></script>
+</body>
+</html>

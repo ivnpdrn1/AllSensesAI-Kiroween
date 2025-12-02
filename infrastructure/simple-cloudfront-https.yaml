@@ -1,0 +1,51 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Simple CloudFront HTTPS for AllSenses S3 Website'
+
+Resources:
+  # CloudFront Distribution for HTTPS
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: AllSenses HTTPS Demo via CloudFront
+        DefaultCacheBehavior:
+          TargetOriginId: S3WebsiteOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+        DefaultRootObject: hackathon-jury-demo.html
+        Enabled: true
+        HttpVersion: http2
+        Origins:
+          - Id: S3WebsiteOrigin
+            DomainName: allsenses-mvp1-demo-website.s3-website-us-east-1.amazonaws.com
+            CustomOriginConfig:
+              HTTPPort: 80
+              OriginProtocolPolicy: http-only
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+        PriceClass: PriceClass_100
+
+Outputs:
+  CloudFrontDomainName:
+    Description: 'CloudFront HTTPS Domain'
+    Value: !GetAtt CloudFrontDistribution.DomainName
+    Export:
+      Name: !Sub "${AWS::StackName}-Domain"
+  
+  HTTPSJuryURL:
+    Description: 'HTTPS URL for Hackathon Jury'
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}/hackathon-jury-demo.html"
+    Export:
+      Name: !Sub "${AWS::StackName}-JuryURL"
+  
+  HTTPSEnhancedURL:
+    Description: 'HTTPS Enhanced Monitor URL'
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}/enhanced-emergency-monitor.html"
+    Export:
+      Name: !Sub "${AWS::StackName}-EnhancedURL"

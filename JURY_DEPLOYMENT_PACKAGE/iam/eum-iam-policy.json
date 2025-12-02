@@ -1,0 +1,22 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EUMSendSMS",
+      "Effect": "Allow",
+      "Action": [
+        "sms-voice:SendTextMessage"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EUMDescribeResources",
+      "Effect": "Allow",
+      "Action": [
+        "sms-voice:DescribePhoneNumbers",
+        "sms-voice:DescribeConfigurationSets"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

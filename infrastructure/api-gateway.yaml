@@ -1,0 +1,312 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS API Gateway configuration for AllSenses AI Guardian MVP'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'dev'
+    Description: 'Environment name (dev, staging, prod)'
+  
+  ApplicationName:
+    Type: String
+    Default: 'allsenses-ai-guardian'
+    Description: 'Application name for resource naming'
+
+Resources:
+  # API Gateway REST API
+  AllSensesApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub '${ApplicationName}-api-${Environment}'
+      Description: 'AllSenses AI Guardian REST API for AWS AI Agent qualification'
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Policy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: 'execute-api:Invoke'
+            Resource: '*'
+
+  # API Gateway Deployment
+  ApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - ThreatDetectionResource
+      - EmergencyEventResource
+      - UserManagementResource
+      - AiAgentResource
+    Properties:
+      RestApiId: !Ref AllSensesApiGateway
+      StageName: !Ref Environment
+
+  # Root API Resource (v1)
+  ApiV1Resource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref AllSensesApiGateway
+      ParentId: !GetAtt AllSensesApiGateway.RootResourceId
+      PathPart: 'api'
+
+  ApiV1VersionResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref AllSensesApiGateway
+      ParentId: !Ref ApiV1Resource
+      PathPart: 'v1'
+
+  # Threat Detection API Resources
+  ThreatDetectionResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref AllSensesApiGateway
+      ParentId: !Ref ApiV1VersionResource
+      PathPart: 'threat-detection'
+
+  ThreatDetectionAnalyzeResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref AllSensesApiGateway
+      ParentId: !Ref ThreatDetectionResource
+      PathPart: 'analyze'
+
+  ThreatDetectionAnalyzeMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref AllSensesApiGateway
+      ResourceId: !Ref ThreatDetectionAnalyzeResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'http://${ApplicationLoadBalancer}/api/v1/threat-detection/analyze'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # Emergency Event API Resources
+  EmergencyEventResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref AllSensesApiGateway
+      ParentId: !Ref ApiV1VersionResource
+      PathPart: 'emergency-events'
+
+  EmergencyEventCreateResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref AllSensesApiGateway
+      ParentId: !Ref EmergencyEventResource
+      PathPart: 'create-and-process'
+
+  EmergencyEventCreateMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref AllSensesApiGateway
+      ResourceId: !Ref EmergencyEventCreateResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'http://${ApplicationLoadBalancer}/api/v1/emergency-events/create-and-process'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # User Management API Resources
+  UserManagementResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref AllSensesApiGateway
+      ParentId: !Ref ApiV1VersionResource
+      PathPart: 'users'
+
+  UserRegistrationResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref AllSensesApiGateway
+      ParentId: !Ref UserManagementResource
+      PathPart: 'register'
+
+  UserRegistrationMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref AllSensesApiGateway
+      ResourceId: !Ref UserRegistrationResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'http://${ApplicationLoadBalancer}/api/v1/users/register'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # AI Agent Comprehensive API Resources
+  AiAgentResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref AllSensesApiGateway
+      ParentId: !Ref ApiV1VersionResource
+      PathPart: 'ai-agent'
+
+  AiAgentWorkflowResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref AllSensesApiGateway
+      ParentId: !Ref AiAgentResource
+      PathPart: 'complete-workflow'
+
+  AiAgentWorkflowMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref AllSensesApiGateway
+      ResourceId: !Ref AiAgentWorkflowResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'http://${ApplicationLoadBalancer}/api/v1/ai-agent/complete-workflow'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # CORS Options Methods for all resources
+  ThreatDetectionAnalyzeOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref AllSensesApiGateway
+      ResourceId: !Ref ThreatDetectionAnalyzeResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # Application Load Balancer (placeholder for backend service)
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${ApplicationName}-alb-${Environment}'
+      Type: application
+      Scheme: internal
+      IpAddressType: ipv4
+      Subnets:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+
+  # VPC and Networking (simplified for MVP)
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: '10.0.0.0/16'
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ApplicationName}-vpc-${Environment}'
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.1.0/24'
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${ApplicationName}-private-subnet-1-${Environment}'
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.2.0/24'
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${ApplicationName}-private-subnet-2-${Environment}'
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'Security group for Application Load Balancer'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: '10.0.0.0/16'
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: '10.0.0.0/16'
+
+Outputs:
+  ApiGatewayUrl:
+    Description: 'API Gateway endpoint URL'
+    Value: !Sub 'https://${AllSensesApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${ApplicationName}-api-gateway-url-${Environment}'
+
+  ApiGatewayId:
+    Description: 'API Gateway ID'
+    Value: !Ref AllSensesApiGateway
+    Export:
+      Name: !Sub '${ApplicationName}-api-gateway-id-${Environment}'
+
+  ThreatDetectionEndpoint:
+    Description: 'Threat Detection API endpoint'
+    Value: !Sub 'https://${AllSensesApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/api/v1/threat-detection/analyze'
+
+  EmergencyEventEndpoint:
+    Description: 'Emergency Event API endpoint'
+    Value: !Sub 'https://${AllSensesApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/api/v1/emergency-events/create-and-process'
+
+  UserManagementEndpoint:
+    Description: 'User Management API endpoint'
+    Value: !Sub 'https://${AllSensesApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/api/v1/users/register'
+
+  AiAgentWorkflowEndpoint:
+    Description: 'AI Agent Complete Workflow endpoint'
+    Value: !Sub 'https://${AllSensesApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/api/v1/ai-agent/complete-workflow'

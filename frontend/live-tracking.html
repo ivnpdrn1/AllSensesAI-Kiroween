@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AllSensesAI - Live Emergency Tracking</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+        }
+
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+
+        /* Info Panel */
+        .info-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            max-width: 380px;
+            font-size: 14px;
+        }
+
+        .info-panel h2 {
+            color: #dc2626;
+            margin-bottom: 20px;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #10b981;
+            margin-right: 10px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 0.6;
+                transform: scale(1.1);
+            }
+        }
+
+        .info-row {
+            margin: 15px 0;
+            padding: 12px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            font-weight: 600;
+            color: #6b7280;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+
+        .info-value {
+            font-size: 18px;
+            color: #1f2937;
+            font-weight: 500;
+        }
+
+        .alert-text {
+            color: #dc2626;
+            font-weight: bold;
+            font-size: 20px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6b7280;
+        }
+
+        .loading-spinner {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .battery-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .battery-bar {
+            width: 40px;
+            height: 18px;
+            border: 2px solid #6b7280;
+            border-radius: 3px;
+            position: relative;
+            background: #f3f4f6;
+        }
+
+        .battery-bar::after {
+            content: '';
+            position: absolute;
+            right: -4px;
+            top: 4px;
+            width: 3px;
+            height: 6px;
+            background: #6b7280;
+            border-radius: 0 2px 2px 0;
+        }
+
+        .battery-fill {
+            height: 100%;
+            background: #10b981;
+            border-radius: 1px;
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+
+        .battery-fill.low {
+            background: #ef4444;
+        }
+
+        .battery-fill.medium {
+            background: #f59e0b;
+        }
+
+        .speed-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: #eff6ff;
+            border-radius: 8px;
+            color: #1e40af;
+            font-weight: 600;
+        }
+
+        .accuracy-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            background: #dcfce7;
+            color: #166534;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .accuracy-badge.poor {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .accuracy-badge.fair {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .error-panel {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            max-width: 400px;
+            z-index: 2000;
+        }
+
+        .error-icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+
+        .error-title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #dc2626;
+            margin-bottom: 10px;
+        }
+
+        .error-message {
+            color: #6b7280;
+            margin-bottom: 20px;
+        }
+
+        .retry-button {
+            padding: 12px 24px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .retry-button:hover {
+            background: #2563eb;
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .info-panel {
+                top: 10px;
+                left: 10px;
+                right: 10px;
+                max-width: none;
+                padding: 20px;
+            }
+
+            .info-panel h2 {
+                font-size: 20px;
+            }
+
+            .info-value {
+                font-size: 16px;
+            }
+        }
+
+        /* Map Controls Styling */
+        .gm-style .gm-style-iw-c {
+            border-radius: 12px;
+            padding: 15px;
+        }
+
+        .gm-style .gm-style-iw-d {
+            overflow: auto !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- Map Container -->
+    <div id="map"></div>
+
+    <!-- Info Panel -->
+    <div class="info-panel" id="infoPanel">
+        <h2>
+            🚨 Emergency Tracking
+        </h2>
+        <div style="margin-bottom: 20px;">
+            <span class="status-indicator"></span>
+            <strong style="color: #10b981; font-size: 16px;">LIVE TRACKING</strong>
+        </div>
+
+        <div class="info-row">
+            <div class="info-label">Victim</div>
+            <div class="info-value alert-text" id="victimName">
+                <div class="loading-spinner"></div>
+                Loading...
+            </div>
+        </div>
+
+        <div class="info-row">
+            <div class="info-label">Incident ID</div>
+            <div class="info-value" id="incidentId">-</div>
+        </div>
+
+        <div class="info-row">
+            <div class="info-label">Last Update</div>
+            <div class="info-value" id="lastUpdate">-</div>
+        </div>
+
+        <div class="info-row">
+            <div class="info-label">Location Accuracy</div>
+            <div class="info-value" id="accuracy">
+                <span class="accuracy-badge">Calculating...</span>
+            </div>
+        </div>
+
+        <div class="info-row">
+            <div class="info-label">Battery Level</div>
+            <div class="info-value" id="battery">
+                <div class="battery-indicator">
+                    <div class="battery-bar">
+                        <div class="battery-fill" id="batteryFill" style="width: 0%"></div>
+                    </div>
+                    <span id="batteryText">-</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="info-row">
+            <div class="info-label">Speed</div>
+            <div class="info-value" id="speed">
+                <span class="speed-indicator">
+                    <span>🚶</span>
+                    <span id="speedText">-</span>
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Error Panel (hidden by default) -->
+    <div class="error-panel" id="errorPanel" style="display: none;">
+        <div class="error-icon">⚠️</div>
+        <div class="error-title" id="errorTitle">Connection Error</div>
+        <div class="error-message" id="errorMessage">Unable to load tracking data</div>
+        <button class="retry-button" onclick="retryConnection()">Retry</button>
+    </div>
+
+    <!-- Google Maps JavaScript API -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY"></script>
+    
+    <script>
+        // Configuration
+        const LAMBDA_URL = 'https://53x75wmoi5qtdv2gfc4sn3btzu0rivqx.lambda-url.us-east-1.on.aws/';
+        const UPDATE_INTERVAL = 5000; // 5 seconds
+        const MAX_HISTORY_POINTS = 100;
+
+        // Get incident ID from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const incidentId = urlParams.get('incident');
+
+        // Map and tracking variables
+        let map, marker, polyline, accuracyCircle;
+        const locationHistory = [];
+        let updateTimer = null;
+        let lastUpdateTime = null;
+
+        // Initialize map when page loads
+        window.onload = function() {
+            if (!incidentId) {
+                showError('Invalid Link', 'No incident ID provided in URL');
+                return;
+            }
+
+            document.getElementById('incidentId').textContent = incidentId;
+            initMap();
+            startTracking();
+        };
+
+        /**
+         * Initialize Google Maps
+         */
+        function initMap() {
+            // Create map centered on default location
+            map = new google.maps.Map(document.getElementById('map'), {
+                zoom: 16,
+                center: { lat: 25.7617, lng: -80.1918 },
+                mapTypeId: 'roadmap',
+                styles: [
+                    {
+                        featureType: 'poi',
+                        elementType: 'labels',
+                        stylers: [{ visibility: 'off' }]
+                    }
+                ],
+                mapTypeControl: true,
+                streetViewControl: true,
+                fullscreenControl: true,
+                zoomControl: true
+            });
+
+            // Create marker for victim's current location
+            marker = new google.maps.Marker({
+                map: map,
+                icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 14,
+                    fillColor: '#dc2626',
+                    fillOpacity: 1,
+                    strokeColor: '#ffffff',
+                    strokeWeight: 4
+                },
+                title: 'Victim Location',
+                animation: google.maps.Animation.DROP
+            });
+
+            // Create polyline for movement trail
+            polyline = new google.maps.Polyline({
+                map: map,
+                strokeColor: '#3b82f6',
+                strokeOpacity: 0.8,
+                strokeWeight: 4,
+                geodesic: true
+            });
+
+            // Create accuracy circle
+            accuracyCircle = new google.maps.Circle({
+                map: map,
+                fillColor: '#3b82f6',
+                fillOpacity: 0.1,
+                strokeColor: '#3b82f6',
+                strokeOpacity: 0.3,
+                strokeWeight: 1
+            });
+
+            console.log('Map initialized for incident:', incidentId);
+        }
+
+        /**
+         * Start tracking updates
+         */
+        function startTracking() {
+            console.log('Starting location tracking...');
+            updateLocation();
+            updateTimer = setInterval(updateLocation, UPDATE_INTERVAL);
+        }
+
+        /**
+         * Stop tracking updates
+         */
+        function stopTracking() {
+            if (updateTimer) {
+                clearInterval(updateTimer);
+                updateTimer = null;
+            }
+        }
+
+        /**
+         * Update location from backend
+         */
+        async function updateLocation() {
+            try {
+                const response = await fetch(LAMBDA_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'GET_LOCATION',
+                        incidentId: incidentId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                if (data.status === 'success' && data.location) {
+                    updateMapWithLocation(data.location);
+                    hideError();
+                } else if (data.status === 'error') {
+                    if (data.message.includes('No location found')) {
+                        // No location yet, keep waiting
+                        console.log('Waiting for first location update...');
+                    } else {
+                        throw new Error(data.message);
+                    }
+                }
+
+            } catch (error) {
+                console.error('Failed to update location:', error);
+                handleUpdateError(error);
+            }
+        }
+
+        /**
+         * Update map with new location data
+         */
+        function updateMapWithLocation(location) {
+            const position = {
+                lat: location.latitude,
+                lng: location.longitude
+            };
+
+            // Update marker position
+            marker.setPosition(position);
+            
+            // Pan map to new position (smooth)
+            map.panTo(position);
+
+            // Add to location history
+            locationHistory.push(position);
+            if (locationHistory.length > MAX_HISTORY_POINTS) {
+                locationHistory.shift();
+            }
+
+            // Update movement trail
+            polyline.setPath(locationHistory);
+
+            // Update accuracy circle
+            const accuracy = location.accuracy || 10;
+            accuracyCircle.setCenter(position);
+            accuracyCircle.setRadius(accuracy);
+
+            // Update info panel
+            updateInfoPanel(location);
+
+            // Record update time
+            lastUpdateTime = Date.now();
+        }
+
+        /**
+         * Update info panel with location data
+         */
+        function updateInfoPanel(location) {
+            // Victim name
+            if (location.victimName) {
+                document.getElementById('victimName').textContent = location.victimName;
+            }
+
+            // Last update time
+            const now = new Date();
+            document.getElementById('lastUpdate').textContent = now.toLocaleTimeString();
+
+            // Accuracy
+            const accuracy = Math.round(location.accuracy || 0);
+            const accuracyBadge = document.getElementById('accuracy');
+            let badgeClass = 'accuracy-badge';
+            let badgeText = `±${accuracy}m`;
+
+            if (accuracy <= 20) {
+                badgeClass += ' good';
+                badgeText += ' (Excellent)';
+            } else if (accuracy <= 50) {
+                badgeClass += ' fair';
+                badgeText += ' (Good)';
+            } else {
+                badgeClass += ' poor';
+                badgeText += ' (Fair)';
+            }
+
+            accuracyBadge.innerHTML = `<span class="${badgeClass}">${badgeText}</span>`;
+
+            // Battery level
+            if (location.batteryLevel !== null && location.batteryLevel !== undefined) {
+                const batteryLevel = location.batteryLevel;
+                const batteryFill = document.getElementById('batteryFill');
+                const batteryText = document.getElementById('batteryText');
+
+                batteryFill.style.width = batteryLevel + '%';
+                batteryText.textContent = batteryLevel + '%';
+
+                // Color based on level
+                batteryFill.className = 'battery-fill';
+                if (batteryLevel <= 20) {
+                    batteryFill.classList.add('low');
+                } else if (batteryLevel <= 50) {
+                    batteryFill.classList.add('medium');
+                }
+            } else {
+                document.getElementById('batteryText').textContent = 'Unknown';
+            }
+
+            // Speed
+            const speed = location.speed;
+            const speedText = document.getElementById('speedText');
+            
+            if (speed !== null && speed !== undefined && speed > 0) {
+                const speedKmh = (speed * 3.6).toFixed(1);
+                speedText.textContent = `${speedKmh} km/h`;
+                
+                // Update icon based on speed
+                const speedIndicator = speedText.parentElement;
+                if (speedKmh < 5) {
+                    speedIndicator.innerHTML = `<span>🚶</span><span id="speedText">${speedKmh} km/h</span>`;
+                } else if (speedKmh < 20) {
+                    speedIndicator.innerHTML = `<span>🚴</span><span id="speedText">${speedKmh} km/h</span>`;
+                } else {
+                    speedIndicator.innerHTML = `<span>🚗</span><span id="speedText">${speedKmh} km/h</span>`;
+                }
+            } else {
+                speedText.textContent = 'Stationary';
+            }
+        }
+
+        /**
+         * Handle update errors
+         */
+        function handleUpdateError(error) {
+            // Don't show error immediately - might be temporary
+            if (lastUpdateTime && (Date.now() - lastUpdateTime < 30000)) {
+                // Less than 30 seconds since last update, keep trying
+                return;
+            }
+
+            // Show error if no updates for 30+ seconds
+            showError('Connection Lost', 'Unable to receive location updates. Retrying...');
+        }
+
+        /**
+         * Show error panel
+         */
+        function showError(title, message) {
+            document.getElementById('errorTitle').textContent = title;
+            document.getElementById('errorMessage').textContent = message;
+            document.getElementById('errorPanel').style.display = 'block';
+        }
+
+        /**
+         * Hide error panel
+         */
+        function hideError() {
+            document.getElementById('errorPanel').style.display = 'none';
+        }
+
+        /**
+         * Retry connection
+         */
+        function retryConnection() {
+            hideError();
+            updateLocation();
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            stopTracking();
+        });
+
+        // Handle visibility change (pause updates when tab hidden)
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                console.log('Tab hidden, pausing updates');
+                stopTracking();
+            } else {
+                console.log('Tab visible, resuming updates');
+                startTracking();
+            }
+        });
+    </script>
+</body>
+</html>

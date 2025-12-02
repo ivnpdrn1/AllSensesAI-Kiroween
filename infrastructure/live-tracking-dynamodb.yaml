@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AllSensesAI Live Location Tracking - DynamoDB Tables'
+
+Resources:
+  # Location Tracking Table - Stores GPS coordinates with timestamps
+  LocationTrackingTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: AllSenses-LocationTracking
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: incidentId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: incidentId
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        Enabled: true
+        AttributeName: ttl
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Project
+          Value: AllSensesAI
+        - Key: Feature
+          Value: LiveTracking
+        - Key: DataRetention
+          Value: 24Hours
+
+  # Incidents Table - Stores emergency incident metadata
+  IncidentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: AllSenses-Incidents
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: incidentId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: incidentId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        Enabled: true
+        AttributeName: ttl
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Project
+          Value: AllSensesAI
+        - Key: Feature
+          Value: LiveTracking
+        - Key: DataRetention
+          Value: 7Days
+
+Outputs:
+  LocationTrackingTableName:
+    Description: Location Tracking DynamoDB Table Name
+    Value: !Ref LocationTrackingTable
+    Export:
+      Name: !Sub '${AWS::StackName}-LocationTrackingTable'
+
+  LocationTrackingTableArn:
+    Description: Location Tracking DynamoDB Table ARN
+    Value: !GetAtt LocationTrackingTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LocationTrackingTableArn'
+
+  IncidentsTableName:
+    Description: Incidents DynamoDB Table Name
+    Value: !Ref IncidentsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-IncidentsTable'
+
+  IncidentsTableArn:
+    Description: Incidents DynamoDB Table ARN
+    Value: !GetAtt IncidentsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-IncidentsTableArn'
+
+  TableSummary:
+    Description: Summary of created tables
+    Value: !Sub |
+      Location Tracking: ${LocationTrackingTable} (TTL: 24 hours)
+      Incidents: ${IncidentsTable} (TTL: 7 days)

@@ -1,0 +1,108 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AllSenses HTTPS Demo with CloudFront + ACM SSL Certificate'
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: demo.allsenses.ai
+    Description: Custom domain name for HTTPS demo
+  
+  S3BucketName:
+    Type: String
+    Default: allsenses-mvp1-demo-website
+    Description: Existing S3 bucket with demo content
+
+Resources:
+  # ACM SSL Certificate for Custom Domain
+  SSLCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref DomainName
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref HostedZone
+      Tags:
+        - Key: Name
+          Value: AllSenses Demo SSL Certificate
+
+  # Route 53 Hosted Zone for Domain
+  HostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name: !Ref DomainName
+      HostedZoneConfig:
+        Comment: AllSenses Demo Domain
+
+  # CloudFront Distribution with SSL
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: AllSenses HTTPS Demo with SSL
+        Aliases:
+          - !Ref DomainName
+        DefaultCacheBehavior:
+          TargetOriginId: S3WebsiteOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          ForwardedValues:
+            QueryString: true
+            Headers: ['*']
+        DefaultRootObject: mvp1-complete-demo.html
+        Enabled: true
+        HttpVersion: http2
+        Origins:
+          - Id: S3WebsiteOrigin
+            DomainName: !Sub "${S3BucketName}.s3-website-us-east-1.amazonaws.com"
+            CustomOriginConfig:
+              HTTPPort: 80
+              OriginProtocolPolicy: http-only
+        ViewerCertificate:
+          AcmCertificateArn: !Ref SSLCertificate
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+
+  # Route 53 Record for Custom Domain
+  DNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2  # CloudFront Hosted Zone ID
+
+Outputs:
+  CustomDomainURL:
+    Description: 'Custom HTTPS Domain for Hackathon Jury'
+    Value: !Sub "https://${DomainName}"
+    Export:
+      Name: !Sub "${AWS::StackName}-CustomDomain"
+  
+  MainDemoURL:
+    Description: 'Main Demo with Custom HTTPS Domain'
+    Value: !Sub "https://${DomainName}/mvp1-complete-demo.html"
+    Export:
+      Name: !Sub "${AWS::StackName}-MainDemo"
+  
+  EnhancedDemoURL:
+    Description: 'Enhanced Emergency Monitor with Custom HTTPS Domain'
+    Value: !Sub "https://${DomainName}/enhanced-emergency-monitor.html"
+    Export:
+      Name: !Sub "${AWS::StackName}-EnhancedDemo"
+  
+  CloudFrontURL:
+    Description: 'CloudFront HTTPS URL (Alternative)'
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+    Export:
+      Name: !Sub "${AWS::StackName}-CloudFront"
+  
+  NameServers:
+    Description: 'Route 53 Name Servers for Domain Configuration'
+    Value: !Join [', ', !GetAtt HostedZone.NameServers]
+    Export:
+      Name: !Sub "${AWS::StackName}-NameServers"

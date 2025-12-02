@@ -1,0 +1,32 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Simple CloudFront HTTPS for AllSenses Demo'
+
+Resources:
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: AllSenses HTTPS Demo
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+        DefaultRootObject: hackathon-jury-demo.html
+        Enabled: true
+        Origins:
+          - Id: S3Origin
+            DomainName: allsenses-mvp1-demo-website.s3-website-us-east-1.amazonaws.com
+            CustomOriginConfig:
+              HTTPPort: 80
+              OriginProtocolPolicy: http-only
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+
+Outputs:
+  HTTPSUrl:
+    Description: 'HTTPS URL for Hackathon Jury'
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}"

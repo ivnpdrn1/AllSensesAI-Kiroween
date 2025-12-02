@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AllSenses CloudFront HTTPS with Origin Access Control'
+
+Resources:
+  # Origin Access Control (OAC) - Modern replacement for OAI
+  OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-OAC"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+        Description: "OAC for AllSenses Demo S3 Bucket"
+
+  # CloudFront Distribution with HTTPS
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: AllSenses HTTPS Demo with OAC
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # CachingDisabled
+          OriginRequestPolicyId: 88a5eaf4-2fd4-4709-b370-b4c650ea3fcf  # CORS-S3Origin
+        DefaultRootObject: enhanced-emergency-monitor.html
+        Enabled: true
+        HttpVersion: http2
+        Origins:
+          - Id: S3Origin
+            DomainName: allsenses-mvp1-demo-website.s3.us-east-1.amazonaws.com
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+            OriginAccessControlId: !GetAtt OriginAccessControl.Id
+        PriceClass: PriceClass_100
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+
+  # S3 Bucket Policy to allow CloudFront OAC access
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: allsenses-mvp1-demo-website
+      PolicyDocument:
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipal
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: arn:aws:s3:::allsenses-mvp1-demo-website/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+
+Outputs:
+  CloudFrontDomainName:
+    Description: 'CloudFront HTTPS Domain'
+    Value: !GetAtt CloudFrontDistribution.DomainName
+    Export:
+      Name: !Sub "${AWS::StackName}-Domain"
+  
+  HTTPSMainURL:
+    Description: 'HTTPS Main Demo URL'
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+    Export:
+      Name: !Sub "${AWS::StackName}-MainURL"
+  
+  HTTPSEnhancedURL:
+    Description: 'HTTPS Enhanced Emergency Monitor URL'
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}/enhanced-emergency-monitor.html"
+    Export:
+      Name: !Sub "${AWS::StackName}-EnhancedURL"
+  
+  HTTPSJuryURL:
+    Description: 'HTTPS Hackathon Jury Demo URL'
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}/hackathon-jury-demo.html"
+    Export:
+      Name: !Sub "${AWS::StackName}-JuryURL"
+  
+  HTTPSCompleteURL:
+    Description: 'HTTPS Complete MVP Demo URL'
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}/mvp1-complete-demo.html"
+    Export:
+      Name: !Sub "${AWS::StackName}-CompleteURL"

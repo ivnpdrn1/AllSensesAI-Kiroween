@@ -1,0 +1,270 @@
+# AWS CloudFormation Template for AllSenses Monitoring & Observability
+# Addresses Operational Excellence pillar improvements
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AllSenses AI Guardian - Monitoring and Observability Stack'
+
+Parameters:
+  ApplicationName:
+    Type: String
+    Default: AllSenses-AI-Guardian
+    Description: Name of the application for resource tagging
+  
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [development, staging, production]
+    Description: Environment for deployment
+
+Resources:
+  # Application Insights for automated monitoring
+  ApplicationInsights:
+    Type: AWS::ApplicationInsights::Application
+    Properties:
+      ResourceGroupName: !Ref AllSensesResourceGroup
+      AutoConfigurationEnabled: true
+      AutoCreate: true
+      Tags:
+        - Key: Application
+          Value: !Ref ApplicationName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Resource Group for organizing AllSenses resources
+  AllSensesResourceGroup:
+    Type: AWS::ResourceGroups::Group
+    Properties:
+      Name: !Sub "${ApplicationName}-${Environment}"
+      Description: Resource group for AllSenses AI Guardian application
+      ResourceQuery:
+        Type: TAG_FILTERS_1_0
+        Query:
+          ResourceTypeFilters:
+            - AWS::Lambda::Function
+            - AWS::DynamoDB::Table
+            - AWS::SNS::Topic
+            - AWS::ApiGateway::RestApi
+          TagFilters:
+            - Key: Application
+              Values: [!Ref ApplicationName]
+
+  # CloudWatch Dashboard for comprehensive monitoring
+  AllSensesMonitoringDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "${ApplicationName}-Monitoring"
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/Lambda", "Duration", "FunctionName", "AudioProcessingFunction"],
+                  ["AWS/Lambda", "Invocations", "FunctionName", "AudioProcessingFunction"],
+                  ["AWS/Lambda", "Errors", "FunctionName", "AudioProcessingFunction"],
+                  ["AWS/Lambda", "Duration", "FunctionName", "EmergencyResponseFunction"],
+                  ["AWS/Lambda", "Invocations", "FunctionName", "EmergencyResponseFunction"]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Lambda Performance Metrics",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", "ThreatAssessments"],
+                  ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", "ThreatAssessments"],
+                  ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", "EmergencyEvents"],
+                  ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", "EmergencyEvents"]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "DynamoDB Capacity Utilization",
+                "period": 300,
+                "stat": "Sum"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ApiGateway", "Count", "ApiName", "AllSensesAPI"],
+                  ["AWS/ApiGateway", "Latency", "ApiName", "AllSensesAPI"],
+                  ["AWS/ApiGateway", "4XXError", "ApiName", "AllSensesAPI"],
+                  ["AWS/ApiGateway", "5XXError", "ApiName", "AllSensesAPI"]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "API Gateway Metrics",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/SNS", "NumberOfMessagesPublished", "TopicName", "EmergencyAlerts"],
+                  ["AWS/SNS", "NumberOfNotificationsFailed", "TopicName", "EmergencyAlerts"]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "SNS Notification Metrics",
+                "period": 300,
+                "stat": "Sum"
+              }
+            },
+            {
+              "type": "log",
+              "x": 16,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/lambda/AudioProcessingFunction'\n| fields @timestamp, @message\n| filter @message like /ERROR/\n| sort @timestamp desc\n| limit 20",
+                "region": "${AWS::Region}",
+                "title": "Recent Errors",
+                "view": "table"
+              }
+            }
+          ]
+        }
+
+  # CloudWatch Alarms for critical metrics
+  HighLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ApplicationName}-High-Latency"
+      AlarmDescription: "Alert when API Gateway latency exceeds 1000ms"
+      MetricName: Latency
+      Namespace: AWS/ApiGateway
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1000
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: AllSensesAPI
+      AlarmActions:
+        - !Ref AlertTopic
+
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ApplicationName}-Lambda-Errors"
+      AlarmDescription: "Alert when Lambda function errors exceed threshold"
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: AudioProcessingFunction
+      AlarmActions:
+        - !Ref AlertTopic
+
+  DynamoDBThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ApplicationName}-DynamoDB-Throttles"
+      AlarmDescription: "Alert when DynamoDB throttling occurs"
+      MetricName: ThrottledRequests
+      Namespace: AWS/DynamoDB
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: TableName
+          Value: ThreatAssessments
+      AlarmActions:
+        - !Ref AlertTopic
+
+  # SNS Topic for alerts
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${ApplicationName}-Alerts"
+      DisplayName: "AllSenses System Alerts"
+      Tags:
+        - Key: Application
+          Value: !Ref ApplicationName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Cost Anomaly Detection
+  CostAnomalyDetector:
+    Type: AWS::CE::AnomalyDetector
+    Properties:
+      AnomalyDetectorName: !Sub "${ApplicationName}-Cost-Monitor"
+      MonitorType: DIMENSIONAL
+      MonitorSpecification:
+        DimensionKey: SERVICE
+        MatchOptions:
+          - EQUALS
+        Values:
+          - Amazon Bedrock
+          - Amazon DynamoDB
+          - AWS Lambda
+          - Amazon API Gateway
+          - Amazon SNS
+
+  # Cost Anomaly Subscription
+  CostAnomalySubscription:
+    Type: AWS::CE::AnomalySubscription
+    Properties:
+      SubscriptionName: !Sub "${ApplicationName}-Cost-Alerts"
+      MonitorArnList:
+        - !GetAtt CostAnomalyDetector.AnomalyDetectorArn
+      Subscribers:
+        - Type: EMAIL
+          Address: admin@allsenses.ai
+      Frequency: DAILY
+      Threshold: 100
+
+Outputs:
+  DashboardURL:
+    Description: "URL to the CloudWatch Dashboard"
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${ApplicationName}-Monitoring"
+    
+  AlertTopicArn:
+    Description: "ARN of the SNS topic for alerts"
+    Value: !Ref AlertTopic
+    Export:
+      Name: !Sub "${ApplicationName}-AlertTopic"
+
+  ResourceGroupName:
+    Description: "Name of the resource group"
+    Value: !Ref AllSensesResourceGroup
+    Export:
+      Name: !Sub "${ApplicationName}-ResourceGroup"

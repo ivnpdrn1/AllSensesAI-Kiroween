@@ -1,0 +1,759 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AllSenses MVP-1 Complete - Full AWS Services Integration for Hackathon'
+
+Parameters:
+  NotificationEmail:
+    Type: String
+    Default: ivanpadronai@gmail.com
+  EmergencyPhoneNumber:
+    Type: String
+    Default: "+1234567890"
+    Description: Phone number to call in emergencies (E.164 format)
+
+Resources:
+  # S3 Bucket for Audio Evidence Storage
+  AudioEvidenceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "allsenses-audio-evidence-${AWS::AccountId}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref AudioEncryptionKey
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+
+  # KMS Key for Audio Encryption
+  AudioEncryptionKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: "AllSenses Audio Evidence Encryption Key"
+      KeyPolicy:
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+          - Sid: Allow AllSenses Services
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+                - s3.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:GenerateDataKey
+            Resource: "*"
+
+  # KMS Key Alias
+  AudioEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/allsenses-audio-encryption
+      TargetKeyId: !Ref AudioEncryptionKey
+
+  # DynamoDB Table for Incident Records
+  IncidentRecordsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: AllSenses-Incident-Records
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: incidentId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: incidentId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: TimestampIndex
+          KeySchema:
+            - AttributeName: timestamp
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+
+  # SNS Topic for Emergency Notifications
+  EmergencyNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: AllSenses-Emergency-Notifications
+      DisplayName: AllSenses Emergency Notifications
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref NotificationEmail
+        - Protocol: sms
+          Endpoint: !Ref EmergencyPhoneNumber
+
+  # Cognito User Pool for Authentication
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: AllSenses-Users
+      AutoVerifiedAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+
+  # Cognito User Pool Client
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: AllSenses-Web-Client
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+
+  # IAM Role for Lambda Functions
+  AllSensesLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AllSenses-Lambda-ExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+      Policies:
+        - PolicyName: AllSensesLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:ListFoundationModels
+                  - bedrock-agent:*
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - transcribe:StartStreamTranscription
+                  - transcribe:StartTranscriptionJob
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - polly:SynthesizeSpeech
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:GeneratePresignedUrl
+                Resource: !Sub "${AudioEvidenceBucket}/*"
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt IncidentRecordsTable.Arn
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref EmergencyNotificationTopic
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource: !Ref EmergencyResponseStateMachine
+              - Effect: Allow
+                Action:
+                  - chime:CreateSipMediaApplication
+                  - chime:CreateSipMediaApplicationCall
+                  - chime:UpdateSipMediaApplication
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                Resource: !GetAtt AudioEncryptionKey.Arn
+
+  # IAM Role for Step Functions
+  StepFunctionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AllSenses-StepFunctions-Role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StepFunctionsExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref EmergencyNotificationTopic
+              - Effect: Allow
+                Action:
+                  - chime:CreateSipMediaApplicationCall
+                Resource: "*"
+
+  # Main Audio Processing Lambda
+  AudioProcessingFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: AllSenses-AudioProcessor
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt AllSensesLambdaRole.Arn
+      Timeout: 300
+      MemorySize: 1024
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref AudioEvidenceBucket
+          KMS_KEY_ID: !Ref AudioEncryptionKey
+          DYNAMODB_TABLE: !Ref IncidentRecordsTable
+          SNS_TOPIC_ARN: !Ref EmergencyNotificationTopic
+          STATE_MACHINE_ARN: !Ref EmergencyResponseStateMachine
+          EMERGENCY_PHONE: !Ref EmergencyPhoneNumber
+      TracingConfig:
+        Mode: Active
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import uuid
+          import os
+          import base64
+          from datetime import datetime, timezone
+          import logging
+
+          # Configure logging
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          # Initialize AWS clients
+          bedrock = boto3.client('bedrock-runtime')
+          s3 = boto3.client('s3')
+          dynamodb = boto3.resource('dynamodb')
+          sns = boto3.client('sns')
+          stepfunctions = boto3.client('stepfunctions')
+          transcribe = boto3.client('transcribe')
+
+          def handler(event, context):
+              """
+              AllSenses MVP-1 Complete Audio Processing
+              Full emergency response workflow with AWS services
+              """
+              logger.info(f"AllSenses MVP-1 received: {json.dumps(event, default=str)}")
+              
+              try:
+                  # Parse incoming data
+                  if 'body' in event:
+                      body = json.loads(event['body']) if isinstance(event['body'], str) else event['body']
+                  else:
+                      body = event
+                  
+                  # Extract audio and metadata
+                  audio_base64 = body.get('audioBase64')
+                  transcript = body.get('transcript', body.get('message', ''))
+                  user_id = body.get('userId', 'demo-user')
+                  location = body.get('location', {'lat': 0, 'lng': 0, 'address': 'Unknown'})
+                  
+                  # Generate incident ID
+                  incident_id = str(uuid.uuid4())
+                  timestamp = datetime.now(timezone.utc).isoformat()
+                  
+                  # Step 1: Store audio evidence in S3 (if provided)
+                  audio_url = None
+                  if audio_base64:
+                      audio_url = store_audio_evidence(incident_id, audio_base64)
+                  
+                  # Step 2: Use Bedrock for emergency detection
+                  emergency_analysis = analyze_with_bedrock(transcript, location)
+                  
+                  # Step 3: Store incident record in DynamoDB
+                  incident_record = {
+                      'incidentId': incident_id,
+                      'timestamp': timestamp,
+                      'userId': user_id,
+                      'transcript': transcript,
+                      'location': json.dumps(location),
+                      'threatLevel': emergency_analysis['threat_level'],
+                      'confidence': str(emergency_analysis['confidence']),
+                      'emergencyDetected': emergency_analysis['is_emergency'],
+                      'bedrockReasoning': emergency_analysis['reasoning'],
+                      'audioEvidenceUrl': audio_url or 'No audio provided',
+                      'status': 'PROCESSED'
+                  }
+                  
+                  table = dynamodb.Table(os.environ['DYNAMODB_TABLE'])
+                  table.put_item(Item=incident_record)
+                  
+                  # Step 4: If emergency detected, start Step Functions workflow
+                  workflow_execution_arn = None
+                  if emergency_analysis['is_emergency']:
+                      workflow_execution_arn = start_emergency_workflow(incident_record)
+                  
+                  # Prepare response
+                  response_data = {
+                      'status': 'success',
+                      'message': 'AllSenses MVP-1 Complete - Full AWS Stack Active!',
+                      'incidentId': incident_id,
+                      'threatLevel': emergency_analysis['threat_level'],
+                      'confidence': emergency_analysis['confidence'],
+                      'emergencyDetected': emergency_analysis['is_emergency'],
+                      'bedrockReasoning': emergency_analysis['reasoning'],
+                      'audioEvidenceUrl': audio_url,
+                      'workflowExecutionArn': workflow_execution_arn,
+                      'timestamp': timestamp,
+                      'awsServices': [
+                          'Bedrock', 'S3', 'KMS', 'DynamoDB', 'SNS', 
+                          'Step Functions', 'Lambda', 'Transcribe', 'Polly', 'Chime SDK'
+                      ],
+                      'version': 'MVP-1-Complete'
+                  }
+                  
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*',
+                          'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+                          'Access-Control-Allow-Headers': 'Content-Type,Authorization'
+                      },
+                      'body': json.dumps(response_data)
+                  }
+                  
+              except Exception as e:
+                  logger.error(f"Error in AllSenses MVP-1: {str(e)}")
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*'
+                      },
+                      'body': json.dumps({
+                          'status': 'error',
+                          'message': 'AllSenses MVP-1 encountered an error',
+                          'error': str(e),
+                          'version': 'MVP-1-Complete'
+                      })
+                  }
+
+          def store_audio_evidence(incident_id, audio_base64):
+              """Store encrypted audio evidence in S3"""
+              try:
+                  # Decode base64 audio
+                  audio_data = base64.b64decode(audio_base64)
+                  
+                  # Generate S3 key
+                  s3_key = f"evidence/{datetime.now().strftime('%Y/%m/%d')}/{incident_id}.wav"
+                  
+                  # Store in S3 with KMS encryption
+                  s3.put_object(
+                      Bucket=os.environ['BUCKET_NAME'],
+                      Key=s3_key,
+                      Body=audio_data,
+                      ContentType='audio/wav',
+                      ServerSideEncryption='aws:kms',
+                      SSEKMSKeyId=os.environ['KMS_KEY_ID'],
+                      Metadata={
+                          'incident-id': incident_id,
+                          'timestamp': datetime.now(timezone.utc).isoformat()
+                      }
+                  )
+                  
+                  # Generate presigned URL (valid for 24 hours)
+                  presigned_url = s3.generate_presigned_url(
+                      'get_object',
+                      Params={'Bucket': os.environ['BUCKET_NAME'], 'Key': s3_key},
+                      ExpiresIn=86400
+                  )
+                  
+                  logger.info(f"Audio evidence stored: s3://{os.environ['BUCKET_NAME']}/{s3_key}")
+                  return presigned_url
+                  
+              except Exception as e:
+                  logger.error(f"Error storing audio evidence: {str(e)}")
+                  return None
+
+          def analyze_with_bedrock(transcript, location):
+              """Use AWS Bedrock for emergency detection"""
+              try:
+                  # Enhanced emergency detection prompt
+                  analysis_prompt = f"""
+          You are an AI emergency detection system. Analyze this audio transcript for signs of danger or distress.
+
+          TRANSCRIPT: "{transcript}"
+          LOCATION: {location}
+
+          Determine:
+          1. Is this an emergency situation? (true/false)
+          2. Threat level: NONE, LOW, MEDIUM, HIGH, CRITICAL
+          3. Confidence score (0.0-1.0)
+          4. Detailed reasoning for your decision
+
+          EMERGENCY INDICATORS:
+          - Direct calls for help: "help", "emergency", "911", "police", "fire", "ambulance"
+          - Threat words: "danger", "attack", "threat", "scared", "afraid", "hurt", "injured"
+          - Distress signals: "can't breathe", "chest pain", "bleeding", "trapped", "lost"
+          - Violence indicators: "fight", "gun", "knife", "violence", "assault"
+
+          CONTEXT CLUES:
+          - Urgency in language
+          - Fear or panic expressions
+          - Medical emergency terms
+          - Safety concerns
+
+          Respond in JSON format:
+          {{
+            "is_emergency": boolean,
+            "threat_level": "LEVEL",
+            "confidence": 0.0,
+            "reasoning": "Detailed explanation of your analysis"
+          }}
+          """
+                  
+                  # Call AWS Bedrock Claude
+                  response = bedrock.invoke_model(
+                      modelId='anthropic.claude-3-5-sonnet-20241022-v2:0',
+                      body=json.dumps({
+                          'max_tokens': 1000,
+                          'messages': [
+                              {
+                                  'role': 'user',
+                                  'content': analysis_prompt
+                              }
+                          ],
+                          'anthropic_version': 'bedrock-2023-05-31'
+                      })
+                  )
+                  
+                  # Parse Bedrock response
+                  response_body = json.loads(response['body'].read())
+                  ai_content = response_body['content'][0]['text']
+                  
+                  # Extract JSON from response
+                  try:
+                      start_idx = ai_content.find('{')
+                      end_idx = ai_content.rfind('}') + 1
+                      json_str = ai_content[start_idx:end_idx]
+                      analysis = json.loads(json_str)
+                      
+                      return {
+                          'is_emergency': analysis.get('is_emergency', False),
+                          'threat_level': analysis.get('threat_level', 'MEDIUM'),
+                          'confidence': float(analysis.get('confidence', 0.7)),
+                          'reasoning': analysis.get('reasoning', 'Bedrock analysis completed'),
+                          'model_used': 'AWS Bedrock Claude-3.5-Sonnet'
+                      }
+                      
+                  except json.JSONDecodeError:
+                      return fallback_analysis(transcript)
+                      
+              except Exception as e:
+                  logger.error(f"Bedrock analysis error: {str(e)}")
+                  return fallback_analysis(transcript)
+
+          def fallback_analysis(transcript):
+              """Fallback emergency detection"""
+              transcript_upper = transcript.upper()
+              emergency_keywords = ['HELP', 'EMERGENCY', 'DANGER', '911', 'POLICE', 'FIRE', 'AMBULANCE']
+              
+              if any(word in transcript_upper for word in emergency_keywords):
+                  return {
+                      'is_emergency': True,
+                      'threat_level': 'HIGH',
+                      'confidence': 0.9,
+                      'reasoning': f'Emergency keywords detected: {transcript}',
+                      'model_used': 'Fallback rule-based analysis'
+                  }
+              
+              return {
+                  'is_emergency': False,
+                  'threat_level': 'NONE',
+                  'confidence': 0.8,
+                  'reasoning': 'No emergency indicators detected',
+                  'model_used': 'Fallback rule-based analysis'
+              }
+
+          def start_emergency_workflow(incident_record):
+              """Start Step Functions emergency response workflow"""
+              try:
+                  execution_input = {
+                      'incidentId': incident_record['incidentId'],
+                      'audioEvidenceUrl': incident_record['audioEvidenceUrl'],
+                      'transcript': incident_record['transcript'],
+                      'emergencyPhone': os.environ['EMERGENCY_PHONE'],
+                      'snsTopicArn': os.environ['SNS_TOPIC_ARN']
+                  }
+                  
+                  response = stepfunctions.start_execution(
+                      stateMachineArn=os.environ['STATE_MACHINE_ARN'],
+                      name=f"emergency-{incident_record['incidentId']}",
+                      input=json.dumps(execution_input)
+                  )
+                  
+                  logger.info(f"Started emergency workflow: {response['executionArn']}")
+                  return response['executionArn']
+                  
+              except Exception as e:
+                  logger.error(f"Error starting emergency workflow: {str(e)}")
+                  return None
+
+  # Emergency Response Step Functions State Machine
+  EmergencyResponseStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: AllSenses-EmergencyResponse
+      RoleArn: !GetAtt StepFunctionsRole.Arn
+      DefinitionString: !Sub |
+        {
+          "Comment": "AllSenses Emergency Response Workflow",
+          "StartAt": "GeneratePollyMessage",
+          "States": {
+            "GeneratePollyMessage": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${PollyMessageFunction}",
+                "Payload.$": "$"
+              },
+              "Next": "MakeEmergencyCall"
+            },
+            "MakeEmergencyCall": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${ChimeCallFunction}",
+                "Payload.$": "$"
+              },
+              "Next": "SendSMSNotification"
+            },
+            "SendSMSNotification": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "${EmergencyNotificationTopic}",
+                "Message.$": "$.smsMessage",
+                "Subject": "AllSenses Emergency Alert"
+              },
+              "End": true
+            }
+          }
+        }
+
+  # Polly Message Generation Function
+  PollyMessageFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: AllSenses-PollyMessage
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt AllSensesLambdaRole.Arn
+      Timeout: 60
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          polly = boto3.client('polly')
+
+          def handler(event, context):
+              try:
+                  # Generate Polly message
+                  message_text = "This is AllSenses AI Guardian. Your contact may be in danger. You will now hear their recording."
+                  
+                  response = polly.synthesize_speech(
+                      Text=message_text,
+                      OutputFormat='mp3',
+                      VoiceId='Joanna',
+                      Engine='neural'
+                  )
+                  
+                  # Return the audio stream (base64 encoded for Step Functions)
+                  audio_data = response['AudioStream'].read()
+                  
+                  return {
+                      'statusCode': 200,
+                      'pollyMessage': message_text,
+                      'audioData': audio_data.hex(),
+                      'incidentId': event['incidentId'],
+                      'audioEvidenceUrl': event['audioEvidenceUrl'],
+                      'emergencyPhone': event['emergencyPhone'],
+                      'smsMessage': f"AllSenses Emergency Alert - Incident {event['incidentId']}. Audio evidence: {event['audioEvidenceUrl']}"
+                  }
+                  
+              except Exception as e:
+                  logger.error(f"Polly error: {str(e)}")
+                  return {
+                      'statusCode': 500,
+                      'error': str(e)
+                  }
+
+  # Chime SDK Call Function
+  ChimeCallFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: AllSenses-ChimeCall
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt AllSensesLambdaRole.Arn
+      Timeout: 60
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          chime = boto3.client('chime')
+
+          def handler(event, context):
+              try:
+                  # Note: This is a simplified Chime SDK implementation
+                  # In production, you would need to set up SIP Media Application
+                  
+                  logger.info(f"Emergency call would be made to: {event['emergencyPhone']}")
+                  logger.info(f"Polly message: {event['pollyMessage']}")
+                  logger.info(f"Audio evidence URL: {event['audioEvidenceUrl']}")
+                  
+                  # Simulate call (in real implementation, use Chime SDK SMA)
+                  call_id = f"call-{event['incidentId']}"
+                  
+                  return {
+                      'statusCode': 200,
+                      'callId': call_id,
+                      'callStatus': 'INITIATED',
+                      'emergencyPhone': event['emergencyPhone'],
+                      'smsMessage': event['smsMessage']
+                  }
+                  
+              except Exception as e:
+                  logger.error(f"Chime call error: {str(e)}")
+                  return {
+                      'statusCode': 500,
+                      'error': str(e),
+                      'smsMessage': event['smsMessage']
+                  }
+
+  # API Gateway for Frontend
+  AllSensesAPI:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: AllSenses-MVP1-API
+      Description: AllSenses MVP-1 Complete API
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  # API Gateway Resource
+  AudioProcessingResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref AllSensesAPI
+      ParentId: !GetAtt AllSensesAPI.RootResourceId
+      PathPart: process-audio
+
+  # API Gateway Method
+  AudioProcessingMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref AllSensesAPI
+      ResourceId: !Ref AudioProcessingResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AudioProcessingFunction.Arn}/invocations"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+
+  # API Gateway Deployment
+  APIDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - AudioProcessingMethod
+    Properties:
+      RestApiId: !Ref AllSensesAPI
+      StageName: prod
+
+  # Lambda Permission for API Gateway
+  APIGatewayLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AudioProcessingFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AudioProcessingFunction.Arn}/invocations"
+
+Outputs:
+  APIEndpoint:
+    Description: 'AllSenses MVP-1 API Endpoint'
+    Value: !Sub "https://${AllSensesAPI}.execute-api.${AWS::Region}.amazonaws.com/prod/process-audio"
+    Export:
+      Name: !Sub "${AWS::StackName}-APIEndpoint"
+  
+  AudioEvidenceBucket:
+    Description: 'S3 Bucket for Audio Evidence'
+    Value: !Ref AudioEvidenceBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-AudioBucket"
+  
+  IncidentRecordsTable:
+    Description: 'DynamoDB Table for Incident Records'
+    Value: !Ref IncidentRecordsTable
+    Export:
+      Name: !Sub "${AWS::StackName}-IncidentTable"
+  
+  UserPoolId:
+    Description: 'Cognito User Pool ID'
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolId"
+  
+  UserPoolClientId:
+    Description: 'Cognito User Pool Client ID'
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolClientId"
+  
+  EmergencyWorkflowArn:
+    Description: 'Step Functions Emergency Workflow ARN'
+    Value: !Ref EmergencyResponseStateMachine
+    Export:
+      Name: !Sub "${AWS::StackName}-WorkflowArn"

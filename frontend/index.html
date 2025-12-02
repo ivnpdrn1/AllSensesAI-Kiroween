@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AllSenses AI Guardian - Agent Dashboard</title>
+    <link rel="stylesheet" href="assets/css/main.css">
+    <link rel="stylesheet" href="assets/css/dashboard.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>AllSenses AI Guardian</h1>
+            <p class="subtitle">Autonomous AI Agent Dashboard</p>
+            <div class="status-indicator">
+                <span class="status-dot" id="agentStatus"></span>
+                <span id="agentStatusText">Initializing...</span>
+            </div>
+            <nav class="nav">
+                <a href="audio-ai-agent-demo.html" class="nav-link featured">🎤 Audio AI Agent Demo</a>
+                <a href="audio-monitor.html" class="nav-link">🎤 Audio Monitor</a>
+                <a href="reasoning.html" class="nav-link">🧠 View LLM Reasoning</a>
+                <a href="aws-integration.html" class="nav-link">☁️ AWS Integration</a>
+            </nav>
+        </header>
+
+        <main class="main-content">
+            <!-- Agent Capabilities Overview -->
+            <section class="capabilities-section">
+                <h2>AI Agent Capabilities</h2>
+                <div class="capabilities-grid">
+                    <div class="capability-card">
+                        <h3>🧠 LLM Integration</h3>
+                        <p>AWS Bedrock Claude/Titan models for autonomous reasoning</p>
+                        <div class="status" id="llmStatus">Checking...</div>
+                    </div>
+                    <div class="capability-card">
+                        <h3>☁️ AWS Services</h3>
+                        <p>DynamoDB, Lambda, SNS, API Gateway integration</p>
+                        <div class="status" id="awsStatus">Checking...</div>
+                    </div>
+                    <div class="capability-card">
+                        <h3>🤖 Autonomous Processing</h3>
+                        <p>Independent threat assessment and emergency response</p>
+                        <div class="status" id="autonomousStatus">Checking...</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Real-time Agent Decisions -->
+            <section class="decisions-section">
+                <h2>Autonomous Agent Decisions</h2>
+                <div class="controls">
+                    <button id="testThreatDetection" class="btn btn-primary">Test Threat Detection</button>
+                    <button id="testEmergencyResponse" class="btn btn-secondary">Test Emergency Response</button>
+                    <button id="testCompleteWorkflow" class="btn btn-accent">Test Complete Workflow</button>
+                </div>
+                <div class="decisions-log" id="decisionsLog">
+                    <div class="log-entry">
+                        <span class="timestamp">System Ready</span>
+                        <span class="message">AI Agent dashboard initialized. Ready for autonomous operations.</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- LLM Reasoning Visualization -->
+            <section class="reasoning-section">
+                <h2>LLM Reasoning Process</h2>
+                <div class="reasoning-container">
+                    <div class="reasoning-step" id="step1">
+                        <h4>1. Data Analysis</h4>
+                        <div class="step-content">Analyzing multimodal sensor data...</div>
+                    </div>
+                    <div class="reasoning-step" id="step2">
+                        <h4>2. Threat Assessment</h4>
+                        <div class="step-content">LLM evaluating threat indicators...</div>
+                    </div>
+                    <div class="reasoning-step" id="step3">
+                        <h4>3. Confidence Scoring</h4>
+                        <div class="step-content">Calculating confidence levels...</div>
+                    </div>
+                    <div class="reasoning-step" id="step4">
+                        <h4>4. Decision Making</h4>
+                        <div class="step-content">Autonomous decision execution...</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- AWS Integration Status -->
+            <section class="aws-integration-section">
+                <h2>AWS Service Integration</h2>
+                <div class="integration-grid">
+                    <div class="integration-card">
+                        <h4>AWS Bedrock</h4>
+                        <div class="integration-status" id="bedrockIntegration">
+                            <span class="status-indicator">●</span>
+                            <span>Connecting...</span>
+                        </div>
+                    </div>
+                    <div class="integration-card">
+                        <h4>DynamoDB</h4>
+                        <div class="integration-status" id="dynamoIntegration">
+                            <span class="status-indicator">●</span>
+                            <span>Connecting...</span>
+                        </div>
+                    </div>
+                    <div class="integration-card">
+                        <h4>AWS Lambda</h4>
+                        <div class="integration-status" id="lambdaIntegration">
+                            <span class="status-indicator">●</span>
+                            <span>Connecting...</span>
+                        </div>
+                    </div>
+                    <div class="integration-card">
+                        <h4>AWS SNS</h4>
+                        <div class="integration-status" id="snsIntegration">
+                            <span class="status-indicator">●</span>
+                            <span>Connecting...</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Agent Statistics -->
+            <section class="statistics-section">
+                <h2>Agent Performance Metrics</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3 id="totalDecisions">0</h3>
+                        <p>Autonomous Decisions</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 id="threatDetections">0</h3>
+                        <p>Threat Detections</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 id="emergencyResponses">0</h3>
+                        <p>Emergency Responses</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 id="avgResponseTime">0ms</h3>
+                        <p>Avg Response Time</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="assets/js/app.js"></script>
+    <script src="assets/js/dashboard.js"></script>
+</body>
+</html>

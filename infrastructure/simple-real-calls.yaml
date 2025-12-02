@@ -1,0 +1,214 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AllSenses Simple Real Phone Calls'
+
+Parameters:
+  NotificationEmail:
+    Type: String
+    Default: ivanpadronai@gmail.com
+
+Resources:
+  # Enhanced IAM Role with SNS permissions
+  RealCallsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonSNSFullAccess
+      Policies:
+        - PolicyName: RealCallsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                Resource: !GetAtt CallLogsTable.Arn
+
+  # DynamoDB for Call Logs
+  CallLogsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: callId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: callId
+          KeyType: HASH
+
+  # Real Phone Call Lambda
+  RealCallsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: AllSenses-RealCalls
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt RealCallsRole.Arn
+      Timeout: 60
+      MemorySize: 512
+      Environment:
+        Variables:
+          CALL_LOGS_TABLE: !Ref CallLogsTable
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import uuid
+          import os
+          from datetime import datetime, timezone
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          sns = boto3.client('sns')
+          dynamodb = boto3.resource('dynamodb')
+
+          def handler(event, context):
+              logger.info(f"Real calls handler: {json.dumps(event, default=str)}")
+              
+              try:
+                  # Parse input
+                  if 'body' in event:
+                      body = json.loads(event['body']) if isinstance(event['body'], str) else event['body']
+                  else:
+                      body = event
+                  
+                  # Check if this is a real call request
+                  if body.get('action') == 'MAKE_REAL_CALL':
+                      return make_real_call(body)
+                  
+                  # Regular processing
+                  transcript = body.get('transcript', body.get('message', 'Test'))
+                  is_emergency = any(word in transcript.upper() for word in ['HELP', 'EMERGENCY', 'DANGER', '911'])
+                  
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*'
+                      },
+                      'body': json.dumps({
+                          'status': 'success',
+                          'message': 'AllSenses with Real Calls Ready!',
+                          'threatLevel': 'HIGH' if is_emergency else 'NONE',
+                          'confidence': 0.9 if is_emergency else 0.8,
+                          'emergencyDetected': is_emergency,
+                          'realCallsEnabled': True,
+                          'version': 'Real-Calls-v1'
+                      })
+                  }
+                  
+              except Exception as e:
+                  logger.error(f"Error: {str(e)}")
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*'
+                      },
+                      'body': json.dumps({
+                          'status': 'error',
+                          'error': str(e)
+                      })
+                  }
+
+          def make_real_call(body):
+              try:
+                  phone_number = body.get('phoneNumber', '+1234567890')
+                  emergency_message = body.get('emergencyMessage', 'Emergency!')
+                  incident_id = body.get('incidentId', str(uuid.uuid4()))
+                  
+                  # Create SMS message
+                  sms_text = f"🚨 ALLSENSES EMERGENCY ALERT 🚨\\n\\nYour contact may be in danger!\\n\\nEmergency: {emergency_message}\\n\\nIncident: {incident_id}\\nTime: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}\\n\\nEvidence: http://allsenses-mvp1-demo-website.s3-website-us-east-1.amazonaws.com/emergency-evidence-demo.html\\n\\nCheck on them immediately!\\n\\n- AllSenses AI Guardian"
+                  
+                  # Send real SMS
+                  response = sns.publish(
+                      PhoneNumber=phone_number,
+                      Message=sms_text
+                  )
+                  
+                  # Log the call
+                  table = dynamodb.Table(os.environ['CALL_LOGS_TABLE'])
+                  table.put_item(
+                      Item={
+                          'callId': f"call-{incident_id}",
+                          'phoneNumber': phone_number,
+                          'message': emergency_message,
+                          'smsId': response['MessageId'],
+                          'timestamp': datetime.now(timezone.utc).isoformat(),
+                          'status': 'SMS_SENT'
+                      }
+                  )
+                  
+                  logger.info(f"Real SMS sent to {phone_number}: {response['MessageId']}")
+                  
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*'
+                      },
+                      'body': json.dumps({
+                          'status': 'success',
+                          'message': 'REAL SMS SENT!',
+                          'callInitiated': True,
+                          'callId': f"call-{incident_id}",
+                          'phoneNumber': phone_number,
+                          'smsMessageId': response['MessageId'],
+                          'realCall': True,
+                          'timestamp': datetime.now(timezone.utc).isoformat()
+                      })
+                  }
+                  
+              except Exception as e:
+                  logger.error(f"Real call failed: {str(e)}")
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Content-Type': 'application/json',
+                          'Access-Control-Allow-Origin': '*'
+                      },
+                      'body': json.dumps({
+                          'status': 'error',
+                          'message': 'Real call failed',
+                          'error': str(e),
+                          'callInitiated': False
+                      })
+                  }
+
+  # Function URL
+  RealCallsFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !Ref RealCallsFunction
+      AuthType: NONE
+      Cors:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+        AllowHeaders:
+          - content-type
+
+Outputs:
+  RealCallsURL:
+    Description: 'Real Phone Calls API URL'
+    Value: !GetAtt RealCallsFunctionUrl.FunctionUrl
+    Export:
+      Name: !Sub "${AWS::StackName}-RealCallsURL"
+  
+  CallLogsTable:
+    Description: 'Call Logs Table'
+    Value: !Ref CallLogsTable
+    Export:
+      Name: !Sub "${AWS::StackName}-CallLogsTable"

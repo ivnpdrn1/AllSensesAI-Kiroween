@@ -1,0 +1,454 @@
+/* AWS Integration specific styles */
+
+.qualification-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+.qualification-card {
+    background: white;
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.qualification-card.qualified {
+    border-color: var(--success-color);
+    background: linear-gradient(135deg, #dcfce7, #ffffff);
+}
+
+.qualification-card.pending {
+    border-color: var(--warning-color);
+    background: linear-gradient(135deg, #fef3c7, #ffffff);
+}
+
+.qualification-card.failed {
+    border-color: var(--danger-color);
+    background: linear-gradient(135deg, #fef2f2, #ffffff);
+}
+
+.qualification-icon {
+    font-size: 3rem;
+    margin-bottom: 16px;
+}
+
+.qualification-card h3 {
+    margin-bottom: 8px;
+    color: var(--text-primary);
+}
+
+.qualification-card p {
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+}
+
+.qualification-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    font-weight: 500;
+}
+
+.qualification-status .status-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: var(--warning-color);
+}
+
+.qualification-status.qualified .status-indicator {
+    background-color: var(--success-color);
+}
+
+.qualification-status.failed .status-indicator {
+    background-color: var(--danger-color);
+}
+
+.qualification-details {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.detail-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.detail-item:last-child {
+    border-bottom: none;
+}
+
+.detail-item span:first-child {
+    color: var(--text-secondary);
+}
+
+.detail-item span:last-child {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.architecture-diagram {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 20px;
+    background: #f8fafc;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+}
+
+.service-layer {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.service-layer h3 {
+    text-align: center;
+    color: var(--text-primary);
+    margin-bottom: 16px;
+    padding: 8px 16px;
+    background: var(--primary-color);
+    color: white;
+    border-radius: 6px;
+}
+
+.service-boxes {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+}
+
+.service-box {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+    min-width: 200px;
+    transition: all 0.3s ease;
+}
+
+.service-box:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+.service-box.connected {
+    border-color: var(--success-color);
+    background: linear-gradient(135deg, #dcfce7, #ffffff);
+}
+
+.service-box.error {
+    border-color: var(--danger-color);
+    background: linear-gradient(135deg, #fef2f2, #ffffff);
+}
+
+.service-icon {
+    font-size: 2rem;
+}
+
+.service-info h4 {
+    margin-bottom: 4px;
+    color: var(--text-primary);
+}
+
+.service-info p {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.service-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+}
+
+.service-status .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--warning-color);
+}
+
+.service-status.connected .status-dot {
+    background-color: var(--success-color);
+}
+
+.service-status.error .status-dot {
+    background-color: var(--danger-color);
+}
+
+.workflow-container {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    overflow-x: auto;
+    padding: 20px;
+    background: #f8fafc;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+}
+
+.workflow-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 180px;
+    background: white;
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px;
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+.workflow-step.active {
+    border-color: var(--primary-color);
+    background: #dbeafe;
+    transform: scale(1.05);
+}
+
+.workflow-step.completed {
+    border-color: var(--success-color);
+    background: #dcfce7;
+}
+
+.step-number {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    margin-bottom: 12px;
+}
+
+.workflow-step.completed .step-number {
+    background: var(--success-color);
+}
+
+.step-content {
+    text-align: center;
+}
+
+.step-content h4 {
+    margin-bottom: 8px;
+    color: var(--text-primary);
+}
+
+.step-content p {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.step-details {
+    font-size: 10px;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.step-status {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+}
+
+.step-status .status-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--border-color);
+}
+
+.step-status.active .status-indicator {
+    background-color: var(--primary-color);
+    animation: pulse 2s infinite;
+}
+
+.step-status.completed .status-indicator {
+    background-color: var(--success-color);
+}
+
+.workflow-arrow {
+    font-size: 1.5rem;
+    color: var(--text-secondary);
+    font-weight: 700;
+}
+
+.monitoring-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+}
+
+.monitor-card {
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 20px;
+}
+
+.monitor-card h3 {
+    margin-bottom: 16px;
+    color: var(--text-primary);
+    text-align: center;
+}
+
+.monitor-metrics {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.metric {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+}
+
+.metric-label {
+    color: var(--text-secondary);
+}
+
+.metric-value {
+    color: var(--text-primary);
+    font-weight: 500;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+.health-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px;
+    background: #dcfce7;
+    border-radius: 6px;
+    font-weight: 500;
+    color: var(--success-color);
+}
+
+.health-indicator.warning {
+    background: #fef3c7;
+    color: var(--warning-color);
+}
+
+.health-indicator.error {
+    background: #fef2f2;
+    color: var(--danger-color);
+}
+
+.health-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--success-color);
+}
+
+.health-indicator.warning .health-dot {
+    background-color: var(--warning-color);
+}
+
+.health-indicator.error .health-dot {
+    background-color: var(--danger-color);
+}
+
+.test-controls {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.test-results {
+    background: #1e293b;
+    color: #e2e8f0;
+    border-radius: 8px;
+    padding: 16px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.test-log {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.test-log .log-entry {
+    display: flex;
+    gap: 12px;
+    padding: 4px 0;
+    border-bottom: 1px solid #334155;
+}
+
+.test-log .log-entry:last-child {
+    border-bottom: none;
+}
+
+.test-log .timestamp {
+    color: #94a3b8;
+    min-width: 120px;
+}
+
+.test-log .message {
+    color: #e2e8f0;
+}
+
+.test-log .message.success {
+    color: var(--success-color);
+}
+
+.test-log .message.error {
+    color: var(--danger-color);
+}
+
+.test-log .message.warning {
+    color: var(--warning-color);
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .qualification-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .service-boxes {
+        flex-direction: column;
+    }
+    
+    .workflow-container {
+        flex-direction: column;
+    }
+    
+    .workflow-arrow {
+        transform: rotate(90deg);
+    }
+    
+    .monitoring-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .test-controls {
+        flex-direction: column;
+    }
+}

@@ -1,0 +1,41 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Simple CloudFront HTTPS for AllSenses Demo'
+
+Resources:
+  # Simple CloudFront Distribution
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: AllSenses HTTPS Demo
+        DefaultCacheBehavior:
+          TargetOriginId: S3WebsiteOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+        DefaultRootObject: mvp1-complete-demo.html
+        Enabled: true
+        Origins:
+          - Id: S3WebsiteOrigin
+            DomainName: allsenses-mvp1-demo-website.s3-website-us-east-1.amazonaws.com
+            CustomOriginConfig:
+              HTTPPort: 80
+              OriginProtocolPolicy: http-only
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+
+Outputs:
+  CloudFrontDomainName:
+    Description: 'CloudFront Domain Name'
+    Value: !GetAtt CloudFrontDistribution.DomainName
+  
+  HTTPSMainDemo:
+    Description: 'HTTPS Main Demo URL'
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}/mvp1-complete-demo.html"
+  
+  HTTPSEnhancedDemo:
+    Description: 'HTTPS Enhanced Demo URL'
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}/enhanced-emergency-monitor.html"

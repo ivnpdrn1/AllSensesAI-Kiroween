@@ -1,0 +1,215 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AllSenses AI Guardian - Minimal Working Version'
+
+Resources:
+  # Lambda execution role
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: BasicPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                Resource: !GetAtt DataTable.Arn
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref AlertTopic
+
+  # DynamoDB table
+  DataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+
+  # SNS topic
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Protocol: email
+          Endpoint: ivanpadronai@gmail.com
+
+  # Lambda function
+  ProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref DataTable
+          TOPIC_ARN: !Ref AlertTopic
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import uuid
+          import os
+          from datetime import datetime
+          
+          def handler(event, context):
+              print(f"AllSenses received: {json.dumps(event)}")
+              
+              try:
+                  # Parse input
+                  if 'body' in event:
+                      body = json.loads(event['body'])
+                  else:
+                      body = event
+                  
+                  audio_data = body.get('audioData', '')
+                  user_id = body.get('userId', 'demo-user')
+                  location = body.get('location', 'Unknown')
+                  
+                  # Simple threat detection
+                  threat_level = 'NONE'
+                  confidence = 0.1
+                  emergency = False
+                  
+                  if any(word in audio_data.upper() for word in ['HELP', 'EMERGENCY', 'DANGER', '911']):
+                      threat_level = 'HIGH'
+                      confidence = 0.9
+                      emergency = True
+                  
+                  # Store in DynamoDB
+                  dynamodb = boto3.resource('dynamodb')
+                  table = dynamodb.Table(os.environ['TABLE_NAME'])
+                  
+                  assessment_id = str(uuid.uuid4())
+                  table.put_item(
+                      Item={
+                          'id': assessment_id,
+                          'userId': user_id,
+                          'threatLevel': threat_level,
+                          'confidence': str(confidence),
+                          'location': location,
+                          'timestamp': datetime.utcnow().isoformat(),
+                          'audioData': audio_data[:100]
+                      }
+                  )
+                  
+                  # Send alert if emergency
+                  if emergency:
+                      sns = boto3.client('sns')
+                      sns.publish(
+                          TopicArn=os.environ['TOPIC_ARN'],
+                          Message=f'EMERGENCY: {threat_level} threat detected for {user_id} at {location}',
+                          Subject='AllSenses Emergency Alert'
+                      )
+                  
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Access-Control-Allow-Origin': '*',
+                          'Access-Control-Allow-Headers': 'Content-Type',
+                          'Access-Control-Allow-Methods': 'POST, OPTIONS'
+                      },
+                      'body': json.dumps({
+                          'assessmentId': assessment_id,
+                          'threatLevel': threat_level,
+                          'confidenceScore': confidence,
+                          'emergencyTriggered': emergency,
+                          'success': True,
+                          'message': 'AllSenses AI Guardian is working!'
+                      })
+                  }
+                  
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'headers': {'Access-Control-Allow-Origin': '*'},
+                      'body': json.dumps({'error': str(e), 'success': False})
+                  }
+
+  # API Gateway
+  Api:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: AllSenses-API
+
+  ApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref Api
+      ParentId: !GetAtt Api.RootResourceId
+      PathPart: analyze
+
+  ApiMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref Api
+      ResourceId: !Ref ApiResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProcessorFunction.Arn}/invocations'
+
+  ApiOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref Api
+      ResourceId: !Ref ApiResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
+              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: false
+            method.response.header.Access-Control-Allow-Methods: false
+            method.response.header.Access-Control-Allow-Origin: false
+
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${Api}/*/*'
+
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - ApiMethod
+      - ApiOptions
+    Properties:
+      RestApiId: !Ref Api
+      StageName: prod
+
+Outputs:
+  ApiEndpoint:
+    Value: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com/prod/analyze'
+    Description: 'AllSenses API Endpoint'

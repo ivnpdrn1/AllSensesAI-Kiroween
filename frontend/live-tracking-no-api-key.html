@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AllSensesAI - Live Emergency Tracking (No API Key Required)</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+        }
+
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+
+        /* Info Panel - Same styling as Google Maps version */
+        .info-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            max-width: 380px;
+            font-size: 14px;
+        }
+
+        .info-panel h2 {
+            color: #dc2626;
+            margin-bottom: 20px;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #10b981;
+            margin-right: 10px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.1); }
+        }
+
+        .info-row {
+            margin: 15px 0;
+            padding: 12px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            font-weight: 600;
+            color: #6b7280;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+
+        .info-value {
+            font-size: 18px;
+            color: #1f2937;
+            font-weight: 500;
+        }
+
+        .alert-text {
+            color: #dc2626;
+            font-weight: bold;
+            font-size: 20px;
+        }
+
+        .loading-spinner {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .battery-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .battery-bar {
+            width: 40px;
+            height: 18px;
+            border: 2px solid #6b7280;
+            border-radius: 3px;
+            position: relative;
+            background: #f3f4f6;
+        }
+
+        .battery-bar::after {
+            content: '';
+            position: absolute;
+            right: -4px;
+            top: 4px;
+            width: 3px;
+            height: 6px;
+            background: #6b7280;
+            border-radius: 0 2px 2px 0;
+        }
+
+        .battery-fill {
+            height: 100%;
+            background: #10b981;
+            border-radius: 1px;
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+
+        .battery-fill.low { background: #ef4444; }
+        .battery-fill.medium { background: #f59e0b; }
+
+        .speed-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: #eff6ff;
+            border-radius: 8px;
+            color: #1e40af;
+            font-weight: 600;
+        }
+
+        .accuracy-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            background: #dcfce7;
+            color: #166534;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .accuracy-badge.poor { background: #fee2e2; color: #991b1b; }
+        .accuracy-badge.fair { background: #fef3c7; color: #92400e; }
+
+        @media (max-width: 768px) {
+            .info-panel {
+                top: 10px;
+                left: 10px;
+                right: 10px;
+                max-width: none;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <div class="info-panel">
+        <h2>🚨 Emergency Tracking</h2>
+        <div style="margin-bottom: 20px;">
+            <span class="status-indicator"></span>
+            <strong style="color: #10b981; font-size: 16px;">LIVE TRACKING</strong>
+        </div>
+
+        <div class="info-row">
+            <div class="info-label">Victim</div>
+            <div class="info-value alert-text" id="victimName">
+                <div class="loading-spinner"></div>
+                Loading...
+            </div>
+        </div>
+
+        <div class="info-row">
+            <div class="info-label">Incident ID</div>
+            <div class="info-value" id="incidentId">-</div>
+        </div>
+
+        <div class="info-row">
+            <div class="info-label">Last Update</div>
+            <div class="info-value" id="lastUpdate">-</div>
+        </div>
+
+        <div class="info-row">
+            <div class="info-label">Location Accuracy</div>
+            <div class="info-value" id="accuracy">
+                <span class="accuracy-badge">Calculating...</span>
+            </div>
+        </div>
+
+        <div class="info-row">
+            <div class="info-label">Battery Level</div>
+            <div class="info-value" id="battery">
+                <div class="battery-indicator">
+                    <div class="battery-bar">
+                        <div class="battery-fill" id="batteryFill" style="width: 0%"></div>
+                    </div>
+                    <span id="batteryText">-</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="info-row">
+            <div class="info-label">Speed</div>
+            <div class="info-value" id="speed">
+                <span class="speed-indicator">
+                    <span>🚶</span>
+                    <span id="speedText">-</span>
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet.js (Open Source Alternative to Google Maps) -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script>
+        const LAMBDA_URL = 'https://53x75wmoi5qtdv2gfc4sn3btzu0rivqx.lambda-url.us-east-1.on.aws/';
+        const UPDATE_INTERVAL = 5000;
+        const MAX_HISTORY_POINTS = 100;
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const incidentId = urlParams.get('incident');
+
+        let map, marker, polyline, accuracyCircle;
+        const locationHistory = [];
+        let updateTimer = null;
+
+        window.onload = function() {
+            if (!incidentId) {
+                alert('No incident ID provided');
+                return;
+            }
+
+            document.getElementById('incidentId').textContent = incidentId;
+            initMap();
+            startTracking();
+        };
+
+        function initMap() {
+            // Initialize Leaflet map
+            map = L.map('map').setView([25.7617, -80.1918], 16);
+
+            // Add OpenStreetMap tiles
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+
+            // Create marker
+            marker = L.circleMarker([25.7617, -80.1918], {
+                radius: 10,
+                fillColor: '#dc2626',
+                color: '#ffffff',
+                weight: 3,
+                opacity: 1,
+                fillOpacity: 1
+            }).addTo(map);
+
+            // Create polyline for trail
+            polyline = L.polyline([], {
+                color: '#3b82f6',
+                weight: 4,
+                opacity: 0.8
+            }).addTo(map);
+
+            // Create accuracy circle
+            accuracyCircle = L.circle([25.7617, -80.1918], {
+                radius: 10,
+                fillColor: '#3b82f6',
+                fillOpacity: 0.1,
+                color: '#3b82f6',
+                weight: 1,
+                opacity: 0.3
+            }).addTo(map);
+        }
+
+        function startTracking() {
+            updateLocation();
+            updateTimer = setInterval(updateLocation, UPDATE_INTERVAL);
+        }
+
+        async function updateLocation() {
+            try {
+                const response = await fetch(LAMBDA_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'GET_LOCATION',
+                        incidentId: incidentId
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success' && data.location) {
+                    updateMapWithLocation(data.location);
+                }
+            } catch (error) {
+                console.error('Update failed:', error);
+            }
+        }
+
+        function updateMapWithLocation(location) {
+            const position = [location.latitude, location.longitude];
+
+            // Update marker
+            marker.setLatLng(position);
+            map.panTo(position);
+
+            // Update trail
+            locationHistory.push(position);
+            if (locationHistory.length > MAX_HISTORY_POINTS) {
+                locationHistory.shift();
+            }
+            polyline.setLatLngs(locationHistory);
+
+            // Update accuracy circle
+            accuracyCircle.setLatLng(position);
+            accuracyCircle.setRadius(location.accuracy || 10);
+
+            // Update info panel
+            updateInfoPanel(location);
+        }
+
+        function updateInfoPanel(location) {
+            if (location.victimName) {
+                document.getElementById('victimName').textContent = location.victimName;
+            }
+
+            document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+
+            const accuracy = Math.round(location.accuracy || 0);
+            let badgeClass = 'accuracy-badge';
+            let badgeText = `±${accuracy}m`;
+
+            if (accuracy <= 20) {
+                badgeText += ' (Excellent)';
+            } else if (accuracy <= 50) {
+                badgeClass += ' fair';
+                badgeText += ' (Good)';
+            } else {
+                badgeClass += ' poor';
+                badgeText += ' (Fair)';
+            }
+
+            document.getElementById('accuracy').innerHTML = `<span class="${badgeClass}">${badgeText}</span>`;
+
+            if (location.batteryLevel !== null && location.batteryLevel !== undefined) {
+                const batteryFill = document.getElementById('batteryFill');
+                const batteryText = document.getElementById('batteryText');
+
+                batteryFill.style.width = location.batteryLevel + '%';
+                batteryText.textContent = location.batteryLevel + '%';
+
+                batteryFill.className = 'battery-fill';
+                if (location.batteryLevel <= 20) {
+                    batteryFill.classList.add('low');
+                } else if (location.batteryLevel <= 50) {
+                    batteryFill.classList.add('medium');
+                }
+            }
+
+            const speed = location.speed;
+            if (speed !== null && speed !== undefined && speed > 0) {
+                const speedKmh = (speed * 3.6).toFixed(1);
+                document.getElementById('speedText').textContent = `${speedKmh} km/h`;
+            } else {
+                document.getElementById('speedText').textContent = 'Stationary';
+            }
+        }
+    </script>
+</body>
+</html>

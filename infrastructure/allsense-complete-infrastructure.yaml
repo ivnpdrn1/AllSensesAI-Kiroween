@@ -1,0 +1,228 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AllSenseAI Complete Infrastructure - 7-Step Pipeline'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: AllSenseAI
+    Description: Project name for resource naming
+
+Resources:
+  # DynamoDB Table for User Profiles
+  AllSenseUsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: AllSenseUsers
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Amazon Location Service Place Index
+  LocationPlaceIndex:
+    Type: AWS::Location::PlaceIndex
+    Properties:
+      IndexName: AllSenseLocationIndex
+      DataSource: Esri
+      DataSourceConfiguration:
+        IntendedUse: SingleUse
+      Description: Location index for AllSenseAI reverse geocoding
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Amazon Pinpoint Project for SMS
+  PinpointProject:
+    Type: AWS::Pinpoint::App
+    Properties:
+      Name: allsense-emergency
+      Tags:
+        Project: !Ref ProjectName
+
+  # EventBridge Custom Bus
+  AllSenseEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: allsense-events
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Lambda Execution Role
+  AllSenseLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AllSense-Lambda-ExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: AllSensePermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                Resource: !GetAtt AllSenseUsersTable.Arn
+              - Effect: Allow
+                Action:
+                  - geo:SearchPlaceIndexForPosition
+                Resource: !GetAtt LocationPlaceIndex.Arn
+              - Effect: Allow
+                Action:
+                  - mobiletargeting:SendMessages
+                  - mobiletargeting:GetApp
+                Resource: !Sub "${PinpointProject.Arn}/*"
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - events:PutEvents
+                Resource: !GetAtt AllSenseEventBus.Arn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                Resource: "*"
+
+  # Enhanced Lambda Function
+  AllSenseCompleteFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: AllSense-Complete-Pipeline
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt AllSenseLambdaRole.Arn
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref AllSenseUsersTable
+          PINPOINT_PROJECT_ID: !Ref PinpointProject
+          LOCATION_INDEX: !Ref LocationPlaceIndex
+          EVENT_BUS_NAME: !Ref AllSenseEventBus
+      TracingConfig:
+        Mode: Active
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({'message': 'AllSenseAI placeholder - will be updated'})
+              }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Lambda Function URL for HTTPS access
+  AllSenseFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt AllSenseCompleteFunction.Arn
+      AuthType: NONE
+      Cors:
+        AllowCredentials: false
+        AllowHeaders:
+          - content-type
+          - authorization
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowOrigins:
+          - "*"
+        MaxAge: 300
+
+  # Permission for Function URL
+  AllSenseFunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AllSenseCompleteFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+
+  # EventBridge Rule for Emergency Events
+  EmergencyEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: allsense-emergency-rule
+      EventBusName: !Ref AllSenseEventBus
+      EventPattern:
+        source:
+          - allsense.app
+        detail-type:
+          - emergency_triggered
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt AllSenseCompleteFunction.Arn
+          Id: AllSenseTarget
+
+  # Permission for EventBridge to invoke Lambda
+  EventBridgeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AllSenseCompleteFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt EmergencyEventRule.Arn
+
+Outputs:
+  FunctionUrl:
+    Description: 'AllSenseAI Complete Pipeline HTTPS URL'
+    Value: !GetAtt AllSenseFunctionUrl.FunctionUrl
+    Export:
+      Name: !Sub "${AWS::StackName}-FunctionUrl"
+
+  DynamoDBTable:
+    Description: 'AllSenseUsers DynamoDB Table'
+    Value: !Ref AllSenseUsersTable
+    Export:
+      Name: !Sub "${AWS::StackName}-UsersTable"
+
+  LocationIndex:
+    Description: 'Location Service Place Index'
+    Value: !Ref LocationPlaceIndex
+    Export:
+      Name: !Sub "${AWS::StackName}-LocationIndex"
+
+  PinpointProjectId:
+    Description: 'Pinpoint Project ID for SMS'
+    Value: !Ref PinpointProject
+    Export:
+      Name: !Sub "${AWS::StackName}-PinpointProject"
+
+  EventBusArn:
+    Description: 'EventBridge Custom Bus ARN'
+    Value: !GetAtt AllSenseEventBus.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-EventBus"

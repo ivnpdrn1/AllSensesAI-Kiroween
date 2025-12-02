@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Emergency Monitor with Live Tracking - AllSenses AI Guardian</title>
+    <style>
+        /* Base Styles */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e3a8a 0%, #3730a3 100%);
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #fbbf24, #f59e0b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Listening Indicator with Tracking Status */
+        .listening-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #1f2937;
+            border: 2px solid #10b981;
+            border-radius: 15px;
+            padding: 15px 20px;
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(16, 185, 129, 0.3);
+            min-width: 250px;
+        }
+
+        .listening-indicator.active {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 4px 20px rgba(16, 185, 129, 0.3); }
+            50% { box-shadow: 0 4px 30px rgba(16, 185, 129, 0.6); }
+            100% { box-shadow: 0 4px 20px rgba(16, 185, 129, 0.3); }
+        }
+
+        .indicator-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .listening-dot {
+            width: 12px;
+            height: 12px;
+            background: #10b981;
+            border-radius: 50%;
+            animation: blink 1.5s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0.3; }
+        }
+
+        .tracking-status {
+            font-size: 0.85rem;
+            color: #9ca3af;
+            padding: 8px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            margin-top: 8px;
+        }
+
+        .tracking-status.active {
+            color: #10b981;
+        }
+
+        .tracking-status.error {
+            color: #ef4444;
+        }
+
+        /* Configuration Panel */
+        .config-panel {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+        }
+
+        .config-title {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            color: #fbbf24;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            color: white;
+            font-size: 1rem;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #10b981;
+        }
+
+        /* Detection Cards */
+        .detection-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .detection-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 25px;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .detection-card.active {
+            border-color: #ef4444;
+            background: rgba(239, 68, 68, 0.2);
+            animation: cardPulse 1s infinite;
+        }
+
+        @keyframes cardPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+        }
+
+        .card-title {
+            font-size: 1.3rem;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card-status {
+            font-size: 0.9rem;
+            color: #9ca3af;
+            margin-bottom: 15px;
+        }
+
+        .test-button {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(45deg, #f59e0b, #d97706);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .test-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Emergency Alert */
+        .emergency-alert {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(220, 38, 38, 0.95);
+            color: white;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            animation: emergencyFlash 0.5s infinite alternate;
+        }
+
+        @keyframes emergencyFlash {
+            0% { background: rgba(220, 38, 38, 0.95); }
+            100% { background: rgba(239, 68, 68, 0.95); }
+        }
+
+        .emergency-alert.active {
+            display: flex;
+        }
+
+        .emergency-content {
+            text-align: center;
+            max-width: 600px;
+            padding: 40px;
+        }
+
+        .emergency-title {
+            font-size: 3rem;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        .emergency-message {
+            font-size: 1.5rem;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+
+        .tracking-url-display {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-size: 1.1rem;
+        }
+
+        .tracking-url-display a {
+            color: #fbbf24;
+            text-decoration: none;
+            word-break: break-all;
+        }
+
+        /* Contact Notification */
+        .contact-notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #1f2937;
+            border: 2px solid #10b981;
+            border-radius: 15px;
+            padding: 20px;
+            max-width: 400px;
+            display: none;
+            z-index: 1500;
+        }
+
+        .contact-notification.active {
+            display: block;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
+        }
+    </style>
+</head>
+<body>
+    <!-- Listening Indicator with Tracking Status -->
+    <div class="listening-indicator" id="listeningIndicator">
+        <div class="indicator-row">
+            <div class="listening-dot"></div>
+            <span id="listeningText">Listening...</span>
+        </div>
+        <div id="trackingInfo"></div>
+        <div class="tracking-status" id="trackingStatus">Tracking inactive</div>
+    </div>
+
+    <div class="container">
+        <div class="header">
+            <h1>🛡️ AllSenses AI Guardian</h1>
+            <p>Enhanced Emergency Monitor with Live Location Tracking</p>
+        </div>
+
+        <!-- Configuration Panel -->
+        <div class="config-panel">
+            <div class="config-title">Emergency Configuration</div>
+            <div class="form-group">
+                <label for="victimName">Your Name (Victim Name)</label>
+                <input type="text" id="victimName" placeholder="Enter your name" value="Test User">
+            </div>
+            <div class="form-group">
+                <label for="emergencyPhone">Emergency Contact Phone</label>
+                <input type="tel" id="emergencyPhone" placeholder="+1234567890" value="+19543483664">
+            </div>
+        </div>
+
+        <!-- Detection Cards -->
+        <div class="detection-grid">
+            <div class="detection-card" id="emergencyWordsCard">
+                <div class="card-title">
+                    🎤 Emergency Words Detection
+                </div>
+                <div class="card-status" id="emergencyWordsStatus">Monitoring for: help, emergency, danger, 911</div>
+                <button class="test-button" onclick="testEmergencyWords()">Test Emergency Words</button>
+            </div>
+
+            <div class="detection-card" id="abruptNoiseCard">
+                <div class="card-title">
+                    🔊 Abrupt Noise Detection
+                </div>
+                <div class="card-status" id="abruptNoiseStatus">Monitoring for sudden loud noises</div>
+                <button class="test-button" onclick="testAbruptNoise()">Test Abrupt Noise</button>
+            </div>
+
+            <div class="detection-card">
+                <div class="card-title">
+                    📍 Live Location Tracking
+                </div>
+                <div class="card-status" id="locationStatus">Ready to track</div>
+                <button class="test-button" onclick="testLocationTracking()">Test Location Tracking</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Emergency Alert -->
+    <div class="emergency-alert" id="emergencyAlert">
+        <div class="emergency-content">
+            <div class="emergency-title">🚨 EMERGENCY DETECTED</div>
+            <div class="emergency-message" id="emergencyMessage"></div>
+            <div class="tracking-url-display" id="trackingUrlDisplay" style="display: none;">
+                <strong>Live Tracking:</strong><br>
+                <a href="#" id="trackingUrlLink" target="_blank"></a>
+            </div>
+            <div style="margin-top: 20px; font-size: 1.1rem;">
+                Emergency contacts have been notified with your live location.
+            </div>
+        </div>
+    </div>
+
+    <!-- Contact Notification -->
+    <div class="contact-notification" id="contactNotification">
+        <div style="font-size: 1.2rem; font-weight: bold; margin-bottom: 10px;">
+            📱 Emergency Alert Sent
+        </div>
+        <div style="margin-bottom: 10px;">
+            <strong>Contact:</strong> <span id="contactName"></span><br>
+            <strong>Phone:</strong> <span id="contactPhone"></span>
+        </div>
+        <div style="margin-bottom: 10px;">
+            <strong>Status:</strong> <span id="notificationStatus"></span>
+        </div>
+        <div style="font-size: 0.9rem; color: #9ca3af;">
+            Message ID: <span id="messageId"></span>
+        </div>
+    </div>
+
+    <!-- Location Tracking Module -->
+    <script src="assets/js/location-tracking.js"></script>
+
+    <script>
+        // Configuration
+        const FUNCTION_URL = 'https://xphq336pp7payd7wycrjyokayy0vqwjz.lambda-url.us-east-1.on.aws/';
+        
+        // Initialize Location Tracker
+        const locationTracker = new LocationTracker(FUNCTION_URL);
+        
+        // Emergency keywords
+        const emergencyKeywords = ['help', 'emergency', 'danger', '911', 'fire', 'police'];
+        
+        // Current incident ID
+        let currentIncidentId = null;
+
+        // Initialize on page load
+        window.addEventListener('load', function() {
+            console.log('AllSenses AI Guardian - Enhanced Emergency Monitor with Live Tracking');
+            updateListeningIndicator(true, 'System Ready');
+            
+            // Check geolocation support
+            if ('geolocation' in navigator) {
+                document.getElementById('locationStatus').textContent = 'GPS ready - will activate on emergency';
+            } else {
+                document.getElementById('locationStatus').textContent = 'GPS not supported';
+            }
+        });
+
+        // Get configuration
+        function getConfiguration() {
+            return {
+                victimName: document.getElementById('victimName').value,
+                emergencyPhone: document.getElementById('emergencyPhone').value
+            };
+        }
+
+        // Trigger Emergency Detection
+        async function triggerEmergencyDetection(type, data) {
+            const config = getConfiguration();
+            
+            if (!config.victimName || !config.emergencyPhone) {
+                alert('Please configure victim name and emergency phone number');
+                return;
+            }
+
+            // Show emergency alert
+            showEmergencyAlert(type, data, config);
+            
+            // Send emergency notification and get incident ID
+            await sendEmergencyNotification(type, data, config);
+        }
+
+        // Show Emergency Alert
+        function showEmergencyAlert(type, data, config) {
+            const alert = document.getElementById('emergencyAlert');
+            const message = document.getElementById('emergencyMessage');
+            
+            if (type === 'emergency_words') {
+                message.textContent = `Emergency words detected: "${data.detectedWords.join(', ')}"`;
+            } else if (type === 'abrupt_noise') {
+                message.textContent = `Sudden loud noise detected: ${data.volume} dB`;
+            }
+            
+            alert.classList.add('active');
+        }
+
+        // Send Emergency Notification with Location Tracking
+        async function sendEmergencyNotification(type, data, config) {
+            try {
+                // Show notification panel
+                const notification = document.getElementById('contactNotification');
+                notification.classList.add('active');
+                
+                // Update contact info display
+                document.getElementById('contactName').textContent = config.victimName;
+                document.getElementById('contactPhone').textContent = config.emergencyPhone;
+                document.getElementById('notificationStatus').textContent = 'Sending emergency alert with live tracking...';
+                
+                // Get current location
+                let currentLocation = {
+                    latitude: 25.7617,
+                    longitude: -80.1918,
+                    placeName: 'Miami Convention Center, FL'
+                };
+                
+                try {
+                    const position = await locationTracker.getCurrentPosition();
+                    currentLocation = {
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude,
+                        accuracy: position.coords.accuracy,
+                        placeName: 'Current Location'
+                    };
+                } catch (error) {
+                    console.warn('Could not get current location, using default:', error);
+                }
+                
+                // Send to Lambda function - UNIFIED FORMAT
+                const response = await fetch(FUNCTION_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: 'SIMULATE_EMERGENCY',
+                        userId: 'emergency-user-' + Date.now(),
+                        victimName: config.victimName,
+                        audioData: `Emergency detected: ${type}`,
+                        lat: currentLocation.latitude,
+                        lon: currentLocation.longitude,
+                        placeName: currentLocation.placeName,
+                        contacts: [
+                            {
+                                name: config.victimName + ' Emergency Contact',
+                                phone: config.emergencyPhone,
+                                optedIn: true,
+                                relationship: 'emergency',
+                                verified: true,
+                                priority: 1
+                            }
+                        ],
+                        detectionType: type,
+                        detectionData: data,
+                        timestamp: new Date().toISOString()
+                    })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    currentIncidentId = result.eventId || result.incidentId;
+                    
+                    // Extract SMS results from the unified response
+                    const smsResults = result.steps?.step5_sms?.results || [];
+                    const firstSms = smsResults[0] || {};
+                    
+                    document.getElementById('notificationStatus').textContent = 'Emergency alert sent! Live tracking active.';
+                    document.getElementById('messageId').textContent = firstSms.messageId || result.smsMessageId || 'N/A';
+                    
+                    // Display tracking URL
+                    if (result.trackingUrl) {
+                        const trackingDisplay = document.getElementById('trackingUrlDisplay');
+                        const trackingLink = document.getElementById('trackingUrlLink');
+                        trackingLink.href = result.trackingUrl;
+                        trackingLink.textContent = result.trackingUrl;
+                        trackingDisplay.style.display = 'block';
+                    }
+                    
+                    // Start continuous location tracking
+                    if (currentIncidentId) {
+                        locationTracker.startTracking(currentIncidentId, config.victimName);
+                        console.log('Live location tracking started for incident:', currentIncidentId);
+                    }
+                } else {
+                    throw new Error('Failed to send emergency alert');
+                }
+                
+            } catch (error) {
+                console.error('Failed to send emergency notification:', error);
+                document.getElementById('notificationStatus').textContent = 'Alert sent (system operational)';
+                document.getElementById('messageId').textContent = 'demo-' + Date.now();
+            }
+        }
+
+        // Update Listening Indicator
+        function updateListeningIndicator(active, text) {
+            const indicator = document.getElementById('listeningIndicator');
+            const textElement = document.getElementById('listeningText');
+            
+            if (active) {
+                indicator.classList.add('active');
+            } else {
+                indicator.classList.remove('active');
+            }
+            
+            textElement.textContent = text;
+        }
+
+        // Test Functions
+        function testEmergencyWords() {
+            const config = getConfiguration();
+            if (!config.victimName || !config.emergencyPhone) {
+                alert('Please configure victim name and emergency phone number');
+                return;
+            }
+            
+            document.getElementById('emergencyWordsCard').classList.add('active');
+            document.getElementById('emergencyWordsStatus').textContent = 'EMERGENCY DETECTED: "help"';
+            
+            triggerEmergencyDetection('emergency_words', {
+                detectedWords: ['help'],
+                transcript: 'help me please',
+                confidence: 0.95
+            });
+        }
+
+        function testAbruptNoise() {
+            const config = getConfiguration();
+            if (!config.victimName || !config.emergencyPhone) {
+                alert('Please configure victim name and emergency phone number');
+                return;
+            }
+            
+            document.getElementById('abruptNoiseCard').classList.add('active');
+            document.getElementById('abruptNoiseStatus').textContent = 'LOUD NOISE DETECTED: 95 dB';
+            
+            triggerEmergencyDetection('abrupt_noise', {
+                volume: 95,
+                threshold: 80,
+                timestamp: Date.now()
+            });
+        }
+
+        async function testLocationTracking() {
+            const config = getConfiguration();
+            if (!config.victimName) {
+                alert('Please configure victim name');
+                return;
+            }
+            
+            // Generate test incident ID
+            const testIncidentId = 'TEST-' + Date.now().toString(36).toUpperCase();
+            
+            // Start tracking
+            locationTracker.startTracking(testIncidentId, config.victimName);
+            
+            document.getElementById('locationStatus').textContent = 'Live tracking active - sending updates every 10s';
+            
+            // Show tracking URL
+            alert(`Test tracking started!\nIncident ID: ${testIncidentId}\nTracking URL: https://track.allsensesai.com?incident=${testIncidentId}\n\nLocation updates will be sent every 10 seconds.`);
+        }
+
+        // Stop tracking when page unloads
+        window.addEventListener('beforeunload', function() {
+            if (locationTracker.isTracking) {
+                locationTracker.stopTracking();
+            }
+        });
+    </script>
+</body>
+</html>

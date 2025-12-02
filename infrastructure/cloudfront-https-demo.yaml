@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AllSenses HTTPS Demo via CloudFront for Hackathon Jury'
+
+Parameters:
+  S3BucketName:
+    Type: String
+    Default: allsenses-mvp1-demo-website
+    Description: Existing S3 bucket with demo content
+
+Resources:
+  # CloudFront Origin Access Identity (Legacy but works)
+  OriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Sub "OAI for ${AWS::StackName}"
+
+  # CloudFront Distribution for HTTPS
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: AllSenses HTTPS Demo Distribution
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+        DefaultRootObject: mvp1-complete-demo.html
+        Enabled: true
+        HttpVersion: http2
+        Origins:
+          - Id: S3Origin
+            DomainName: !Sub "${S3BucketName}.s3-website-us-east-1.amazonaws.com"
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
+        PriceClass: PriceClass_100
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+
+  # No bucket policy needed for website endpoint
+
+Outputs:
+  CloudFrontURL:
+    Description: 'HTTPS URL for Hackathon Jury Demo'
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+    Export:
+      Name: !Sub "${AWS::StackName}-HTTPS-URL"
+  
+  CloudFrontDemoURL:
+    Description: 'Direct Demo URL with HTTPS'
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}/mvp1-complete-demo.html"
+    Export:
+      Name: !Sub "${AWS::StackName}-Demo-URL"
+
+  EnhancedMonitorURL:
+    Description: 'Enhanced Emergency Monitor with HTTPS'
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}/enhanced-emergency-monitor.html"
+    Export:
+      Name: !Sub "${AWS::StackName}-Enhanced-URL"

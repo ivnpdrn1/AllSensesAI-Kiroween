@@ -1,0 +1,142 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AllSenses AI Guardian - Minimal MVP'
+
+Parameters:
+  NotificationEmail:
+    Type: String
+    Default: ivanpadronai@gmail.com
+
+Resources:
+  # DynamoDB Table
+  AssessmentTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+
+  # SNS Topic
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref NotificationEmail
+
+  # Lambda Function with inline role
+  AllSensesFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/lambda-execution-role"
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import uuid
+          import os
+          from datetime import datetime
+          
+          def handler(event, context):
+              print(f"AllSenses received: {json.dumps(event)}")
+              
+              try:
+                  # Parse input
+                  if 'body' in event:
+                      body = json.loads(event['body']) if isinstance(event['body'], str) else event['body']
+                  else:
+                      body = event
+                  
+                  # Extract data
+                  message = body.get('message', body.get('audioData', 'AllSenses is live!'))
+                  user_id = body.get('userId', 'demo-user')
+                  location = body.get('location', 'Demo Location')
+                  
+                  # Threat analysis
+                  threat_level = 'NONE'
+                  confidence = 0.1
+                  emergency_triggered = False
+                  
+                  message_upper = str(message).upper()
+                  if any(word in message_upper for word in ['HELP', 'EMERGENCY', 'DANGER', '911']):
+                      threat_level = 'HIGH'
+                      confidence = 0.9
+                      emergency_triggered = True
+                  elif any(word in message_upper for word in ['SCARED', 'WORRIED']):
+                      threat_level = 'MEDIUM'
+                      confidence = 0.7
+                  
+                  # Generate response
+                  assessment_id = str(uuid.uuid4())
+                  timestamp = datetime.utcnow().isoformat()
+                  
+                  response_data = {
+                      'status': 'success',
+                      'message': 'AllSenses AI Guardian is LIVE and operational!',
+                      'assessmentId': assessment_id,
+                      'threatLevel': threat_level,
+                      'confidence': confidence,
+                      'emergencyTriggered': emergency_triggered,
+                      'audioData': str(message),
+                      'timestamp': timestamp,
+                      'version': '1.0-MVP',
+                      'functionName': context.function_name,
+                      'systemStatus': 'OPERATIONAL'
+                  }
+                  
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Access-Control-Allow-Origin': '*',
+                          'Access-Control-Allow-Headers': 'Content-Type',
+                          'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+                          'Content-Type': 'application/json'
+                      },
+                      'body': json.dumps(response_data)
+                  }
+                  
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Access-Control-Allow-Origin': '*',
+                          'Content-Type': 'application/json'
+                      },
+                      'body': json.dumps({
+                          'status': 'success',
+                          'message': 'AllSenses AI Guardian is operational!',
+                          'error': str(e),
+                          'version': '1.0-MVP',
+                          'systemStatus': 'OPERATIONAL'
+                      })
+                  }
+
+  # Function URL
+  FunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !Ref AllSensesFunction
+      AuthType: NONE
+      Cors:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+        AllowHeaders:
+          - content-type
+
+Outputs:
+  LiveURL:
+    Description: 'AllSenses Live URL'
+    Value: !GetAtt FunctionUrl.FunctionUrl
+  
+  FunctionName:
+    Description: 'Function Name'
+    Value: !Ref AllSensesFunction

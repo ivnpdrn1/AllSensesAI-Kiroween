@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Monitor - AllSenses AI Guardian</title>
+    <link rel="stylesheet" href="assets/css/main.css">
+    <link rel="stylesheet" href="assets/css/audio-monitor.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🎤 Audio Safety Monitor</h1>
+            <p class="subtitle">Real-time Audio Threat Detection</p>
+            <div class="monitoring-status">
+                <span class="status-dot" id="monitoringStatus"></span>
+                <span id="monitoringStatusText">Ready to Start</span>
+            </div>
+            <nav class="nav">
+                <a href="index.html" class="nav-link">← Back to Dashboard</a>
+            </nav>
+        </header>
+
+        <main class="main-content">
+            <!-- Audio Controls -->
+            <section class="audio-controls-section">
+                <h2>Audio Monitoring Controls</h2>
+                <div class="controls-container">
+                    <div class="control-group">
+                        <button id="startMonitoring" class="btn btn-primary btn-large">
+                            🎤 Start Audio Monitoring
+                        </button>
+                        <button id="stopMonitoring" class="btn btn-secondary btn-large" disabled>
+                            ⏹️ Stop Monitoring
+                        </button>
+                    </div>
+                    
+                    <div class="consent-container">
+                        <label class="consent-checkbox">
+                            <input type="checkbox" id="consentCheckbox">
+                            <span class="checkmark"></span>
+                            I consent to audio monitoring for safety purposes
+                        </label>
+                        <p class="consent-note">
+                            Audio data is processed in real-time and automatically deleted after analysis. 
+                            No audio is permanently stored.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Live Audio Visualization -->
+            <section class="audio-visualization-section">
+                <h2>Live Audio Analysis</h2>
+                <div class="visualization-container">
+                    <div class="audio-waveform">
+                        <canvas id="waveformCanvas" width="800" height="200"></canvas>
+                        <div class="waveform-overlay">
+                            <span id="audioLevelText">Audio Level: 0 dB</span>
+                        </div>
+                    </div>
+                    
+                    <div class="audio-metrics">
+                        <div class="metric-item">
+                            <span class="metric-label">Volume:</span>
+                            <div class="metric-bar">
+                                <div class="metric-fill" id="volumeFill"></div>
+                            </div>
+                            <span class="metric-value" id="volumeValue">0 dB</span>
+                        </div>
+                        
+                        <div class="metric-item">
+                            <span class="metric-label">Stress Level:</span>
+                            <div class="metric-bar">
+                                <div class="metric-fill stress-fill" id="stressFill"></div>
+                            </div>
+                            <span class="metric-value" id="stressValue">0%</span>
+                        </div>
+                        
+                        <div class="metric-item">
+                            <span class="metric-label">Threat Level:</span>
+                            <div class="threat-indicator" id="threatIndicator">NONE</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Real-time Analysis Results -->
+            <section class="analysis-results-section">
+                <h2>AI Analysis Results</h2>
+                <div class="results-container">
+                    <div class="analysis-card" id="currentAnalysis">
+                        <h3>Current Analysis</h3>
+                        <div class="analysis-content">
+                            <div class="analysis-item">
+                                <span class="label">Status:</span>
+                                <span class="value" id="analysisStatus">Waiting for audio...</span>
+                            </div>
+                            <div class="analysis-item">
+                                <span class="label">Confidence:</span>
+                                <span class="value" id="analysisConfidence">0%</span>
+                            </div>
+                            <div class="analysis-item">
+                                <span class="label">Processing Time:</span>
+                                <span class="value" id="processingTime">0ms</span>
+                            </div>
+                        </div>
+                        
+                        <div class="llm-reasoning" id="llmReasoning">
+                            <h4>AI Reasoning:</h4>
+                            <p>No analysis performed yet</p>
+                        </div>
+                    </div>
+                    
+                    <div class="emergency-status" id="emergencyStatus">
+                        <h3>Emergency Status</h3>
+                        <div class="emergency-indicator" id="emergencyIndicator">
+                            <span class="emergency-dot"></span>
+                            <span>No Emergency Detected</span>
+                        </div>
+                        <div class="emergency-details" id="emergencyDetails" style="display: none;">
+                            <p><strong>Emergency Event ID:</strong> <span id="emergencyEventId">-</span></p>
+                            <p><strong>Response Actions:</strong> <span id="responseActions">-</span></p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Analysis History -->
+            <section class="analysis-history-section">
+                <h2>Analysis History</h2>
+                <div class="history-controls">
+                    <button id="clearHistory" class="btn btn-secondary">Clear History</button>
+                    <select id="historyFilter" class="filter-select">
+                        <option value="all">All Analyses</option>
+                        <option value="threats">Threats Only</option>
+                        <option value="emergencies">Emergencies Only</option>
+                    </select>
+                </div>
+                <div class="history-log" id="historyLog">
+                    <div class="history-entry">
+                        <span class="timestamp">System Ready</span>
+                        <span class="message">Audio monitoring system initialized</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Test Scenarios -->
+            <section class="test-scenarios-section">
+                <h2>Test Scenarios</h2>
+                <div class="test-buttons">
+                    <button id="testNormal" class="btn btn-accent">Test Normal Audio</button>
+                    <button id="testDistress" class="btn btn-warning">Test Distress Call</button>
+                    <button id="testEmergency" class="btn btn-danger">Test Emergency</button>
+                </div>
+                <p class="test-note">
+                    Use these buttons to simulate different audio scenarios for demonstration purposes.
+                </p>
+            </section>
+        </main>
+    </div>
+
+    <script src="assets/js/app.js"></script>
+    <script src="assets/js/audio-monitor.js"></script>
+</body>
+</html>

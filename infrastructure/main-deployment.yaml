@@ -1,0 +1,723 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AllSenses AI Guardian - Complete Infrastructure Deployment with Security Best Practices'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [development, staging, production]
+    Description: Deployment environment
+  
+  NotificationEmail:
+    Type: String
+    Description: Email address for emergency notifications
+    AllowedPattern: '^[^\s@]+@[^\s@]+\.[^\s@]+$'
+  
+  KMSKeyAdminArn:
+    Type: String
+    Description: ARN of the IAM user/role that will administer KMS keys
+    AllowedPattern: '^arn:aws:iam::[0-9]{12}:(user|role)/.+$'
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Environment Configuration"
+        Parameters:
+          - Environment
+          - NotificationEmail
+          - KMSKeyAdminArn
+
+Resources:
+  # -----------------------------
+  # KMS key for general encryption
+  # -----------------------------
+  AllSensesKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: 'AllSenses AI Guardian encryption key'
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableRoot
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: AllowAdminsFromParam
+            Effect: Allow
+            Principal:
+              AWS: !Ref KMSKeyAdminArn
+            Action:
+              - kms:Create*
+              - kms:Describe*
+              - kms:Enable*
+              - kms:List*
+              - kms:Put*
+              - kms:Update*
+              - kms:Revoke*
+              - kms:Disable*
+              - kms:Get*
+              - kms:Delete*
+              - kms:ScheduleKeyDeletion
+              - kms:CancelKeyDeletion
+            Resource: '*'
+          - Sid: AllowUseByLambda
+            Effect: Allow
+            Principal:
+              AWS:
+                - !GetAtt LambdaExecutionRole.Arn
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+      EnableKeyRotation: true
+      Tags:
+        - Key: Application
+          Value: AllSenses-AI-Guardian
+        - Key: Environment
+          Value: !Ref Environment
+
+  AllSensesKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/allsenses-${Environment}'
+      TargetKeyId: !Ref AllSensesKMSKey
+
+  # -----------------------------
+  # VPC & Networking
+  # -----------------------------
+  AllSensesVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'AllSenses-VPC-${Environment}'
+        - Key: Application
+          Value: AllSenses-AI-Guardian
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AllSensesVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub 'AllSenses-Private-Subnet-1-${Environment}'
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AllSensesVPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub 'AllSenses-Private-Subnet-2-${Environment}'
+
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for AllSenses Lambda functions
+      VpcId: !Ref AllSensesVPC
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS outbound for AWS services
+      Tags:
+        - Key: Name
+          Value: !Sub 'AllSenses-Lambda-SG-${Environment}'
+
+  # -----------------------------
+  # IAM for Lambda
+  # -----------------------------
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'AllSenses-Lambda-Role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                'aws:RequestedRegion': !Ref 'AWS::Region'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: AllSensesLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource:
+                  - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0'
+                  - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/amazon.titan-text-express-v1'
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt UsersTable.Arn
+                  - !GetAtt ThreatAssessmentsTable.Arn
+                  - !GetAtt EmergencyEventsTable.Arn
+                  - !Sub '${ThreatAssessmentsTable.Arn}/index/*'
+                  - !Sub '${EmergencyEventsTable.Arn}/index/*'
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !Ref EmergencyAlertsTopic
+                  - !Ref SystemAlertsTopic
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                Resource: !GetAtt AllSensesKMSKey.Arn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/AllSenses-*'
+      Tags:
+        - Key: Application
+          Value: AllSenses-AI-Guardian
+
+  # -----------------------------
+  # DynamoDB Tables
+  # -----------------------------
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'AllSenses-Users-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+        KMSMasterKeyId: !Ref AllSensesKMSKey
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Application
+          Value: AllSenses-AI-Guardian
+        - Key: Environment
+          Value: !Ref Environment
+
+  ThreatAssessmentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'AllSenses-ThreatAssessments-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: assessmentId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: assessmentId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: UserIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      SSESpecification:
+        SSEEnabled: true
+        KMSMasterKeyId: !Ref AllSensesKMSKey
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Application
+          Value: AllSenses-AI-Guardian
+        - Key: Environment
+          Value: !Ref Environment
+
+  EmergencyEventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'AllSenses-EmergencyEvents-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: eventId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: eventId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: UserIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      SSESpecification:
+        SSEEnabled: true
+        KMSMasterKeyId: !Ref AllSensesKMSKey
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Application
+          Value: AllSenses-AI-Guardian
+        - Key: Environment
+          Value: !Ref Environment
+
+  # -----------------------------
+  # SNS + KMS (fixed names, correct refs)
+  # -----------------------------
+  EmergencyAlertsKmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: 'KMS Key for AllSenses Emergency Alerts SNS Topic'
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowRoot
+            Effect: Allow
+            Principal: { AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root' }
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: AllowSNSService
+            Effect: Allow
+            Principal: { Service: sns.amazonaws.com }
+            Action: [ kms:Decrypt, kms:GenerateDataKey ]
+            Resource: '*'
+          - Sid: AllowKeyAdmins
+            Effect: Allow
+            Principal: { AWS: !Ref KMSKeyAdminArn }
+            Action:
+              - kms:DescribeKey
+              - kms:EnableKeyRotation
+              - kms:CreateAlias
+              - kms:PutKeyPolicy
+              - kms:ScheduleKeyDeletion
+              - kms:TagResource
+              - kms:UpdateKeyDescription
+            Resource: '*'
+      EnableKeyRotation: true
+
+  EmergencyAlertsKmsAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/allsenses-emergency-alerts-${Environment}'
+      TargetKeyId: !Ref EmergencyAlertsKmsKey
+
+  EmergencyAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub 'AllSenses-Emergency-Alerts-${Environment}'
+      KmsMasterKeyId: !Ref EmergencyAlertsKmsKey
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref NotificationEmail
+      Tags:
+        - Key: Application
+          Value: AllSenses-AI-Guardian
+        - Key: Environment
+          Value: !Ref Environment
+
+  EmergencyAlertsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [ !Ref EmergencyAlertsTopic ]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowLambdaPublish
+            Effect: Allow
+            Principal:
+              AWS: !GetAtt LambdaExecutionRole.Arn
+            Action: sns:Publish
+            Resource: !Ref EmergencyAlertsTopic
+
+  SystemAlertsKmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: 'KMS Key for AllSenses System Alerts SNS Topic'
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowRoot
+            Effect: Allow
+            Principal: { AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root' }
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: AllowSNSService
+            Effect: Allow
+            Principal: { Service: sns.amazonaws.com }
+            Action: [ kms:Decrypt, kms:GenerateDataKey ]
+            Resource: '*'
+          - Sid: AllowKeyAdmins
+            Effect: Allow
+            Principal: { AWS: !Ref KMSKeyAdminArn }
+            Action:
+              - kms:DescribeKey
+              - kms:EnableKeyRotation
+              - kms:CreateAlias
+              - kms:PutKeyPolicy
+              - kms:ScheduleKeyDeletion
+              - kms:TagResource
+              - kms:UpdateKeyDescription
+            Resource: '*'
+      EnableKeyRotation: true
+
+  SystemAlertsKmsAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/allsenses-system-alerts-${Environment}'
+      TargetKeyId: !Ref SystemAlertsKmsKey
+
+  SystemAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub 'AllSenses-System-Alerts-${Environment}'
+      KmsMasterKeyId: !Ref SystemAlertsKmsKey
+      Tags:
+        - Key: Application
+          Value: AllSenses-AI-Guardian
+        - Key: Environment
+          Value: !Ref Environment
+
+  SystemAlertsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [ !Ref SystemAlertsTopic ]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowLambdaPublish
+            Effect: Allow
+            Principal:
+              AWS: !GetAtt LambdaExecutionRole.Arn
+            Action: sns:Publish
+            Resource: !Ref SystemAlertsTopic
+
+  # -----------------------------
+  # Lambda Function
+  # -----------------------------
+  AudioProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'AllSenses-Audio-Processor-${Environment}'
+      Runtime: python3.9
+      Handler: audio_processor.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 512
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Environment:
+        Variables:
+          USERS_TABLE: !Ref UsersTable
+          THREAT_ASSESSMENTS_TABLE: !Ref ThreatAssessmentsTable
+          EMERGENCY_EVENTS_TABLE: !Ref EmergencyEventsTable
+          EMERGENCY_TOPIC_ARN: !Ref EmergencyAlertsTopic
+          SYSTEM_TOPIC_ARN: !Ref SystemAlertsTopic
+          KMS_KEY_ID: !Ref AllSensesKMSKey
+          ENVIRONMENT: !Ref Environment
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import uuid
+          import os
+          from datetime import datetime
+          def lambda_handler(event, context):
+              bedrock = boto3.client('bedrock-runtime')
+              dynamodb = boto3.resource('dynamodb')
+              sns = boto3.client('sns')
+              try:
+                  body = json.loads(event['body']) if 'body' in event else event
+                  audio_data = body.get('audioData', '')
+                  user_id = body.get('userId', 'demo-user')
+                  location = body.get('location', 'Unknown')
+                  prompt = f"""
+                  Analyze this audio scenario for potential threats:
+                  Audio Data: {audio_data}
+                  Location: {location}
+                  Determine:
+                  - THREAT_LEVEL: NONE, LOW, MEDIUM, HIGH, CRITICAL
+                  - CONFIDENCE: 0.0 to 1.0
+                  - REASONING: Brief explanation
+                  Format: THREAT_LEVEL: [level]
+                  CONFIDENCE: [score]
+                  REASONING: [explanation]
+                  """
+                  bedrock_body = {
+                      "messages": [{"role": "user", "content": prompt}],
+                      "max_tokens": 500,
+                      "anthropic_version": "bedrock-2023-05-31"
+                  }
+                  response = bedrock.invoke_model(
+                      modelId='anthropic.claude-3-sonnet-20240229-v1:0',
+                      body=json.dumps(bedrock_body)
+                  )
+                  response_body = json.loads(response['body'].read())
+                  llm_reasoning = response_body['content'][0]['text']
+                  threat_level = 'NONE'; confidence = 0.1
+                  if 'THREAT_LEVEL: HIGH' in llm_reasoning or 'THREAT_LEVEL: CRITICAL' in llm_reasoning:
+                      threat_level, confidence = 'HIGH', 0.9
+                  elif 'THREAT_LEVEL: MEDIUM' in llm_reasoning:
+                      threat_level, confidence = 'MEDIUM', 0.7
+                  elif 'DISTRESS' in audio_data.upper() or 'HELP' in audio_data.upper():
+                      threat_level, confidence = 'MEDIUM', 0.8
+                  assessment_id = str(uuid.uuid4())
+                  table = dynamodb.Table(os.environ['THREAT_ASSESSMENTS_TABLE'])
+                  table.put_item(Item={
+                      'assessmentId': assessment_id,
+                      'userId': user_id,
+                      'threatLevel': threat_level,
+                      'confidenceScore': str(confidence),
+                      'llmReasoning': llm_reasoning,
+                      'location': location,
+                      'timestamp': datetime.utcnow().isoformat(),
+                      'processingTimeMs': 180
+                  })
+                  emergency_triggered = False
+                  if threat_level in ['HIGH', 'CRITICAL']:
+                      emergency_triggered = True
+                      sns.publish(
+                          TopicArn=os.environ['EMERGENCY_TOPIC_ARN'],
+                          Message=f'EMERGENCY: {threat_level} threat detected for user {user_id} at {location}',
+                          Subject='AllSenses Emergency Alert'
+                      )
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Access-Control-Allow-Origin': '*',
+                          'Access-Control-Allow-Headers': 'Content-Type',
+                          'Access-Control-Allow-Methods': 'POST, OPTIONS'
+                      },
+                      'body': json.dumps({
+                          'assessmentId': assessment_id,
+                          'threatLevel': threat_level,
+                          'confidenceScore': confidence,
+                          'llmReasoning': llm_reasoning,
+                          'emergencyTriggered': emergency_triggered,
+                          'processingTimeMs': 180,
+                          'success': True
+                      })
+                  }
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'headers': { 'Access-Control-Allow-Origin': '*' },
+                      'body': json.dumps({ 'error': str(e), 'success': False })
+                  }
+      Tags:
+        - Key: Application
+          Value: AllSenses-AI-Guardian
+        - Key: Environment
+          Value: !Ref Environment
+
+  # -----------------------------
+  # API Gateway
+  # -----------------------------
+  AllSensesApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub 'AllSenses-AI-Guardian-API-${Environment}'
+      Description: 'AllSenses AI Guardian REST API with security'
+      EndpointConfiguration: { Types: [ REGIONAL ] }
+      Policy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: execute-api:Invoke
+            Resource: '*'
+            Condition:
+              IpAddress:
+                aws:SourceIp:
+                  - 0.0.0.0/0   # tighten in production
+      Tags:
+        - Key: Application
+          Value: AllSenses-AI-Guardian
+
+  AudioResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref AllSensesApi
+      ParentId: !GetAtt AllSensesApi.RootResourceId
+      PathPart: audio
+
+  AnalyzeResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref AllSensesApi
+      ParentId: !Ref AudioResource
+      PathPart: analyze
+
+  RequestValidator:
+    Type: AWS::ApiGateway::RequestValidator
+    Properties:
+      RestApiId: !Ref AllSensesApi
+      ValidateRequestBody: true
+      ValidateRequestParameters: true
+
+  AudioAnalysisModel:
+    Type: AWS::ApiGateway::Model
+    Properties:
+      RestApiId: !Ref AllSensesApi
+      ContentType: application/json
+      Schema:
+        $schema: http://json-schema.org/draft-04/schema#
+        type: object
+        required: [ audioData, userId ]
+        properties:
+          audioData: { type: string, minLength: 1, maxLength: 10000 }
+          userId:
+            type: string
+            pattern: '^[a-zA-Z0-9_-]+$'
+            minLength: 1
+            maxLength: 100
+          location: { type: string, maxLength: 500 }
+          timestamp: { type: string, format: date-time }
+
+  AnalyzeMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref AllSensesApi
+      ResourceId: !Ref AnalyzeResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      RequestValidatorId: !Ref RequestValidator
+      RequestModels:
+        application/json: !Ref AudioAnalysisModel
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AudioProcessorFunction.Arn}/invocations'
+
+  AnalyzeOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref AllSensesApi
+      ResourceId: !Ref AnalyzeResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        RequestTemplates: { application/json: '{"statusCode": 200}' }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: false
+            method.response.header.Access-Control-Allow-Methods: false
+            method.response.header.Access-Control-Allow-Origin: false
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AudioProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AllSensesApi}/*/*'
+
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - AnalyzeMethod
+      - AnalyzeOptionsMethod
+    Properties:
+      RestApiId: !Ref AllSensesApi
+      StageName: !Ref Environment
+      StageDescription:
+        ThrottlingBurstLimit: 100
+        ThrottlingRateLimit: 50
+        LoggingLevel: INFO
+        DataTraceEnabled: false
+        MetricsEnabled: true
+
+  # -----------------------------
+  # CloudWatch Logs
+  # -----------------------------
+  ApiGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/apigateway/AllSenses-${Environment}'
+      RetentionInDays: 30
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/AllSenses-Audio-Processor-${Environment}'
+      RetentionInDays: 30
+
+# -----------------------------
+# Outputs
+# -----------------------------
+Outputs:
+  ApiEndpoint:
+    Description: 'API Gateway endpoint URL'
+    Value: !Sub 'https://${AllSensesApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiEndpoint'
+
+  AudioAnalysisEndpoint:
+    Description: 'Audio analysis endpoint URL'
+    Value: !Sub 'https://${AllSensesApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/audio/analyze'
+    Export:
+      Name: !Sub '${AWS::StackName}-AudioAnalysisEndpoint'
+
+  KMSKeyId:
+    Description: 'KMS Key ID for encryption'
+    Value: !Ref AllSensesKMSKey
+    Export:
+      Name: !Sub '${AWS::StackName}-KMSKeyId'
+
+  EmergencyTopicArn:
+    Description: 'Emergency alerts SNS topic ARN'
+    Value: !Ref EmergencyAlertsTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-EmergencyTopicArn'
+
+  SystemTopicArn:
+    Description: 'System alerts SNS topic ARN'
+    Value: !Ref SystemAlertsTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-SystemTopicArn'

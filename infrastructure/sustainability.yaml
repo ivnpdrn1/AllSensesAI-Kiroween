@@ -1,0 +1,539 @@
+# AWS CloudFormation Template for AllSenses Sustainability Monitoring
+# Addresses Sustainability pillar improvements
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AllSenses AI Guardian - Sustainability and Green Computing Stack'
+
+Parameters:
+  ApplicationName:
+    Type: String
+    Default: AllSenses-AI-Guardian
+    Description: Name of the application for resource tagging
+  
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [development, staging, production]
+    Description: Environment for deployment
+
+Resources:
+  # Lambda function for carbon footprint calculation
+  CarbonFootprintCalculatorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ApplicationName}-CarbonCalculator-Role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SustainabilityMetricsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                  - cloudwatch:GetMetricStatistics
+                  - lambda:GetFunction
+                  - dynamodb:DescribeTable
+                  - ec2:DescribeInstances
+                  - ce:GetUsageAndCosts
+                Resource: "*"
+
+  CarbonFootprintCalculator:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ApplicationName}-Carbon-Calculator"
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt CarbonFootprintCalculatorRole.Arn
+      Timeout: 300
+      Environment:
+        Variables:
+          APPLICATION_NAME: !Ref ApplicationName
+          ENVIRONMENT: !Ref Environment
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import os
+          from datetime import datetime, timedelta
+          
+          def lambda_handler(event, context):
+              cloudwatch = boto3.client('cloudwatch')
+              ce = boto3.client('ce')
+              
+              # Carbon intensity factors (kg CO2e per kWh) by AWS region
+              # Based on AWS sustainability data and grid carbon intensity
+              carbon_intensity = {
+                  'us-east-1': 0.000415,  # Virginia (renewable energy heavy)
+                  'us-west-2': 0.000285,  # Oregon (hydroelectric)
+                  'eu-west-1': 0.000316,  # Ireland (wind power)
+                  'ap-southeast-2': 0.000610,  # Sydney
+                  'default': 0.000500
+              }
+              
+              region = os.environ.get('AWS_REGION', 'us-east-1')
+              intensity = carbon_intensity.get(region, carbon_intensity['default'])
+              
+              try:
+                  # Calculate energy consumption estimates
+                  end_time = datetime.utcnow()
+                  start_time = end_time - timedelta(hours=1)
+                  
+                  # Get Lambda invocation metrics
+                  lambda_metrics = cloudwatch.get_metric_statistics(
+                      Namespace='AWS/Lambda',
+                      MetricName='Duration',
+                      Dimensions=[
+                          {'Name': 'FunctionName', 'Value': 'AudioProcessingFunction'}
+                      ],
+                      StartTime=start_time,
+                      EndTime=end_time,
+                      Period=3600,
+                      Statistics=['Sum']
+                  )
+                  
+                  # Estimate energy consumption
+                  total_duration_ms = sum([point['Sum'] for point in lambda_metrics['Datapoints']])
+                  
+                  # Lambda energy estimation: ~0.0000166 kWh per GB-second
+                  # Assuming 512MB memory allocation
+                  lambda_energy_kwh = (total_duration_ms / 1000) * 0.5 * 0.0000166
+                  
+                  # DynamoDB energy estimation (approximate)
+                  dynamodb_energy_kwh = 0.001  # Base consumption estimate
+                  
+                  # Total energy consumption
+                  total_energy_kwh = lambda_energy_kwh + dynamodb_energy_kwh
+                  
+                  # Calculate carbon footprint
+                  carbon_footprint_kg = total_energy_kwh * intensity
+                  
+                  # Efficiency metrics
+                  requests_per_kwh = 1000 / max(total_energy_kwh, 0.001)  # Avoid division by zero
+                  
+                  # Put custom metrics to CloudWatch
+                  cloudwatch.put_metric_data(
+                      Namespace='AllSenses/Sustainability',
+                      MetricData=[
+                          {
+                              'MetricName': 'CarbonFootprint',
+                              'Value': carbon_footprint_kg,
+                              'Unit': 'None',
+                              'Dimensions': [
+                                  {'Name': 'Application', 'Value': os.environ['APPLICATION_NAME']},
+                                  {'Name': 'Environment', 'Value': os.environ['ENVIRONMENT']}
+                              ]
+                          },
+                          {
+                              'MetricName': 'EnergyConsumption',
+                              'Value': total_energy_kwh,
+                              'Unit': 'None',
+                              'Dimensions': [
+                                  {'Name': 'Application', 'Value': os.environ['APPLICATION_NAME']},
+                                  {'Name': 'Environment', 'Value': os.environ['ENVIRONMENT']}
+                              ]
+                          },
+                          {
+                              'MetricName': 'RequestsPerKWh',
+                              'Value': requests_per_kwh,
+                              'Unit': 'Count',
+                              'Dimensions': [
+                                  {'Name': 'Application', 'Value': os.environ['APPLICATION_NAME']},
+                                  {'Name': 'Environment', 'Value': os.environ['ENVIRONMENT']}
+                              ]
+                          }
+                      ]
+                  )
+                  
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps({
+                          'carbon_footprint_kg': carbon_footprint_kg,
+                          'energy_consumption_kwh': total_energy_kwh,
+                          'requests_per_kwh': requests_per_kwh,
+                          'region': region,
+                          'carbon_intensity': intensity
+                      })
+                  }
+                  
+              except Exception as e:
+                  print(f"Error calculating carbon footprint: {str(e)}")
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps({'error': str(e)})
+                  }
+      Tags:
+        - Key: Application
+          Value: !Ref ApplicationName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: "Sustainability Monitoring"
+
+  # EventBridge rule to trigger carbon footprint calculation hourly
+  CarbonCalculationSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${ApplicationName}-Carbon-Calculation"
+      Description: "Hourly carbon footprint calculation"
+      ScheduleExpression: "rate(1 hour)"
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt CarbonFootprintCalculator.Arn
+          Id: "CarbonCalculatorTarget"
+
+  # Permission for EventBridge to invoke Lambda
+  CarbonCalculatorInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CarbonFootprintCalculator
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CarbonCalculationSchedule.Arn
+
+  # Sustainability Dashboard
+  SustainabilityDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "${ApplicationName}-Sustainability"
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AllSenses/Sustainability", "CarbonFootprint", "Application", "${ApplicationName}", "Environment", "${Environment}"],
+                  ["AllSenses/Sustainability", "EnergyConsumption", "Application", "${ApplicationName}", "Environment", "${Environment}"]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Carbon Footprint & Energy Consumption",
+                "period": 3600,
+                "stat": "Average",
+                "yAxis": {
+                  "left": {
+                    "min": 0
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AllSenses/Sustainability", "RequestsPerKWh", "Application", "${ApplicationName}", "Environment", "${Environment}"]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Energy Efficiency (Requests per kWh)",
+                "period": 3600,
+                "stat": "Average",
+                "yAxis": {
+                  "left": {
+                    "min": 0
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/Lambda", "Duration", "FunctionName", "AudioProcessingFunction"],
+                  ["AWS/Lambda", "Duration", "FunctionName", "EmergencyResponseFunction"]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Lambda Execution Efficiency",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", "ThreatAssessments"],
+                  ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", "ThreatAssessments"]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "DynamoDB Resource Utilization",
+                "period": 300,
+                "stat": "Sum"
+              }
+            },
+            {
+              "type": "number",
+              "x": 16,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AllSenses/Sustainability", "CarbonFootprint", "Application", "${ApplicationName}", "Environment", "${Environment}"]
+                ],
+                "view": "singleValue",
+                "region": "${AWS::Region}",
+                "title": "Current Carbon Footprint (kg CO2e/hour)",
+                "period": 3600,
+                "stat": "Average"
+              }
+            }
+          ]
+        }
+
+  # CloudWatch Alarm for high carbon footprint
+  HighCarbonFootprintAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ApplicationName}-High-Carbon-Footprint"
+      AlarmDescription: "Alert when carbon footprint exceeds sustainable threshold"
+      MetricName: CarbonFootprint
+      Namespace: AllSenses/Sustainability
+      Statistic: Average
+      Period: 3600
+      EvaluationPeriods: 2
+      Threshold: 0.1  # 0.1 kg CO2e per hour threshold
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Application
+          Value: !Ref ApplicationName
+        - Name: Environment
+          Value: !Ref Environment
+      TreatMissingData: notBreaching
+
+  # Resource optimization recommendations Lambda
+  ResourceOptimizerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ApplicationName}-ResourceOptimizer-Role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ResourceOptimizerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:GetMetricStatistics
+                  - lambda:GetFunction
+                  - lambda:UpdateFunctionConfiguration
+                  - dynamodb:DescribeTable
+                  - dynamodb:UpdateTable
+                  - sns:Publish
+                Resource: "*"
+
+  ResourceOptimizer:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ApplicationName}-Resource-Optimizer"
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt ResourceOptimizerRole.Arn
+      Timeout: 300
+      Environment:
+        Variables:
+          APPLICATION_NAME: !Ref ApplicationName
+          ENVIRONMENT: !Ref Environment
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import os
+          from datetime import datetime, timedelta
+          
+          def lambda_handler(event, context):
+              cloudwatch = boto3.client('cloudwatch')
+              lambda_client = boto3.client('lambda')
+              dynamodb = boto3.client('dynamodb')
+              
+              recommendations = []
+              
+              try:
+                  # Analyze Lambda function performance
+                  end_time = datetime.utcnow()
+                  start_time = end_time - timedelta(days=7)
+                  
+                  # Get Lambda memory utilization
+                  memory_metrics = cloudwatch.get_metric_statistics(
+                      Namespace='AWS/Lambda',
+                      MetricName='Duration',
+                      Dimensions=[
+                          {'Name': 'FunctionName', 'Value': 'AudioProcessingFunction'}
+                      ],
+                      StartTime=start_time,
+                      EndTime=end_time,
+                      Period=86400,
+                      Statistics=['Average', 'Maximum']
+                  )
+                  
+                  if memory_metrics['Datapoints']:
+                      avg_duration = sum([point['Average'] for point in memory_metrics['Datapoints']]) / len(memory_metrics['Datapoints'])
+                      
+                      # Recommend memory optimization if duration is consistently low
+                      if avg_duration < 1000:  # Less than 1 second average
+                          recommendations.append({
+                              'service': 'AWS Lambda',
+                              'resource': 'AudioProcessingFunction',
+                              'recommendation': 'Consider reducing memory allocation to optimize cost and carbon footprint',
+                              'potential_savings': '15-30% cost reduction',
+                              'sustainability_impact': 'Reduced energy consumption'
+                          })
+                  
+                  # Analyze DynamoDB usage patterns
+                  read_capacity_metrics = cloudwatch.get_metric_statistics(
+                      Namespace='AWS/DynamoDB',
+                      MetricName='ConsumedReadCapacityUnits',
+                      Dimensions=[
+                          {'Name': 'TableName', 'Value': 'ThreatAssessments'}
+                      ],
+                      StartTime=start_time,
+                      EndTime=end_time,
+                      Period=86400,
+                      Statistics=['Average', 'Maximum']
+                  )
+                  
+                  if read_capacity_metrics['Datapoints']:
+                      avg_read_capacity = sum([point['Average'] for point in read_capacity_metrics['Datapoints']]) / len(read_capacity_metrics['Datapoints'])
+                      
+                      # Recommend on-demand pricing if usage is variable
+                      if avg_read_capacity < 5:
+                          recommendations.append({
+                              'service': 'Amazon DynamoDB',
+                              'resource': 'ThreatAssessments',
+                              'recommendation': 'Switch to on-demand billing for variable workloads',
+                              'potential_savings': '20-40% cost reduction during low usage',
+                              'sustainability_impact': 'Pay only for resources used'
+                          })
+                  
+                  # General sustainability recommendations
+                  recommendations.extend([
+                      {
+                          'service': 'General',
+                          'resource': 'Application Architecture',
+                          'recommendation': 'Consider deploying in regions with higher renewable energy usage',
+                          'potential_savings': 'Up to 50% carbon footprint reduction',
+                          'sustainability_impact': 'Significant environmental benefit'
+                      },
+                      {
+                          'service': 'General',
+                          'resource': 'Data Lifecycle',
+                          'recommendation': 'Implement automated data archival for old threat assessments',
+                          'potential_savings': '10-20% storage cost reduction',
+                          'sustainability_impact': 'Reduced storage energy consumption'
+                      }
+                  ])
+                  
+                  # Put recommendations as custom metrics
+                  cloudwatch.put_metric_data(
+                      Namespace='AllSenses/Sustainability',
+                      MetricData=[
+                          {
+                              'MetricName': 'OptimizationRecommendations',
+                              'Value': len(recommendations),
+                              'Unit': 'Count',
+                              'Dimensions': [
+                                  {'Name': 'Application', 'Value': os.environ['APPLICATION_NAME']},
+                                  {'Name': 'Environment', 'Value': os.environ['ENVIRONMENT']}
+                              ]
+                          }
+                      ]
+                  )
+                  
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps({
+                          'recommendations': recommendations,
+                          'total_recommendations': len(recommendations)
+                      })
+                  }
+                  
+              except Exception as e:
+                  print(f"Error generating recommendations: {str(e)}")
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps({'error': str(e)})
+                  }
+      Tags:
+        - Key: Application
+          Value: !Ref ApplicationName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: "Resource Optimization"
+
+  # Weekly resource optimization schedule
+  ResourceOptimizationSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${ApplicationName}-Resource-Optimization"
+      Description: "Weekly resource optimization analysis"
+      ScheduleExpression: "cron(0 6 ? * SUN *)"  # Every Sunday at 6 AM UTC
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt ResourceOptimizer.Arn
+          Id: "ResourceOptimizerTarget"
+
+  # Permission for EventBridge to invoke Resource Optimizer
+  ResourceOptimizerInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ResourceOptimizer
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ResourceOptimizationSchedule.Arn
+
+Outputs:
+  SustainabilityDashboardURL:
+    Description: "URL to the Sustainability Dashboard"
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${ApplicationName}-Sustainability"
+    
+  CarbonCalculatorArn:
+    Description: "ARN of the Carbon Footprint Calculator Lambda"
+    Value: !GetAtt CarbonFootprintCalculator.Arn
+    Export:
+      Name: !Sub "${ApplicationName}-CarbonCalculator"
+
+  ResourceOptimizerArn:
+    Description: "ARN of the Resource Optimizer Lambda"
+    Value: !GetAtt ResourceOptimizer.Arn
+    Export:
+      Name: !Sub "${ApplicationName}-ResourceOptimizer"
